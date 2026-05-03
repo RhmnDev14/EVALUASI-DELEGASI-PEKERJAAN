@@ -8,10 +8,20 @@ import os
 import io
 from fastapi import FastAPI, Response, UploadFile, File, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import argparse
 
 app = FastAPI(title="API Evaluasi Delegasi Pekerjaan")
+
+# Konfigurasi CORS agar bisa diakses oleh frontend (Next.js)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # Mengizinkan semua origin (untuk development)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/", include_in_schema=False)
 async def root():
