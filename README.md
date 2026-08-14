@@ -22,7 +22,8 @@ Berikut adalah alur data algoritma dari dataset mentah hingga tahap evaluasi akh
 - **REST API (FastAPI)**: Memungkinkan integrasi dengan aplikasi lain (Web/Mobile).
 - **Analisis K-Means**: Pengelompokan beban kerja karyawan menggunakan K=3 (Rendah, Sedang, Tinggi).
 - **Validasi Cepat (Dry Run)**: Fitur untuk memvalidasi format dan kelengkapan data sebelum diproses secara penuh.
-- **Visualisasi Premium (Seaborn)**: Grafik distribusi beban per _assignee_ dengan resolusi tinggi.
+- **Ekspor Laporan Excel Premium**: Menghasilkan file Excel (.xlsx) dengan _styling_ otomatis, *UI Cards* rekomendasi delegasi per klaster, kotak metrik, dan plot grafik yang ditanamkan (*embedded*).
+- **Visualisasi Premium (Seaborn)**: Grafik distribusi beban per _assignee_ dengan resolusi tinggi (ditanamkan ke dalam Excel).
 - **Evaluasi Klaster**: Penghitungan kualitas klaster menggunakan **Davies-Bouldin Index (DBI)**.
 - **Manajemen Template**: Endpoint untuk mengunduh template CSV standar.
 
@@ -30,7 +31,7 @@ Berikut adalah alur data algoritma dari dataset mentah hingga tahap evaluasi akh
 
 - **Frontend**: Next.js (React), TypeScript, Tailwind CSS
 - **Backend**: Python 3.x, FastAPI, Uvicorn
-- **Data Science**: Pandas, Scikit-Learn
+- **Data Science & Export**: Pandas, Scikit-Learn, OpenPyXL
 - **Visualisasi**: Matplotlib, Seaborn
 
 ## 📋 Prasyarat
@@ -119,9 +120,9 @@ Jika Anda lebih suka menjalankan secara manual di terminal terpisah:
 3. **Alur Kerja**:
    - `GET /template` untuk mendapatkan contoh file.
    - `POST /dry-run` untuk memvalidasi data CSV tanpa menjalankan clustering.
-   - `POST /upload` untuk memproses data dan menjalankan K-Means.
-   - `GET /preview` untuk melihat visualisasi hasil terbaru.
-   - `GET /download` untuk mengunduh laporan grafik resolusi tinggi.
+   - `POST /upload` untuk memproses data, menjalankan K-Means, dan men-generate laporan.
+   - `GET /preview` untuk melihat visualisasi hasil terbaru di browser.
+   - `GET /download-excel` untuk mengunduh laporan Excel terpadu yang memuat ringkasan klaster, detail karyawan, metrik, rekomendasi delegasi, dan plot grafik.
 
 ### C. Penggunaan Lokal (CLI)
 
@@ -138,21 +139,23 @@ Jika Anda lebih suka menjalankan secara manual di terminal terpisah:
 
 ## 📊 Penjelasan Output
 
-### 1. Visualisasi Grafik (`/preview` atau Web)
+### 1. Laporan Terpadu Excel (`/download-excel`)
 
-Grafik menyajikan analisis yang mendalam mengenai distribusi beban kerja:
+Sistem akan menghasilkan file **hasil_evaluasi_delegasi.xlsx** yang terdiri dari:
 
-- **Sumbu X**: Menampilkan nama **Assignee** (Penerima Tugas).
-- **Sumbu Y**: Menampilkan **Total History Point** (Total Beban Kerja).
-- **Panel Ringkasan (Kanan)**: Menampilkan total tugas, **Davies-Bouldin Index**, dan jumlah karyawan dengan beban tinggi.
-- **Kategori Klaster / Interpretasi**:
-  - **Karyawan Beban Rendah**: Kapasitas beban kerja minim, direkomendasikan untuk menerima delegasi tugas tambahan.
-  - **Karyawan Beban Sedang**: Beban kerja seimbang dan proporsional.
-  - **Karyawan Beban Tinggi**: Memikul beban tertinggi. Diperlukan pemerataan (delegasi ulang) untuk menghindari bottleneck.
+- **Sheet "Ringkasan Klaster"**:
+  - **Kotak Metrik (Stats Cards)**: Menampilkan Total User Teranalisis, nilai Davies-Bouldin Index (DBI), dan Jumlah Cluster.
+  - **Tabel Ringkasan**: Rekapitulasi kelompok beban kerja.
+  - **Visualisasi Plot K-Means**: Grafik distribusi beban kerja beresolusi tinggi yang ter-embed otomatis di dalam sheet.
+  - **UI Cards Rekomendasi Pemerataan**: Kotak-kotak berwarna khusus (Merah, Kuning, Hijau) yang menyorot siapa saja karyawan di beban tinggi yang perlu pendelegasian ulang, dan siapa yang masih punya kapasitas (beban rendah).
 
-### 2. Hasil Ekspor Data
+- **Sheet "Detail Karyawan"**:
+  - Daftar lengkap seluruh karyawan yang dianalisis beserta nilai *Total History Point*, ID Klaster, dan kategori bebannya (Rendah / Sedang / Tinggi).
+  - Kolom secara otomatis menyesuaikan lebar (auto-fit) dan dibingkai rapi (border).
 
-Data hasil clustering tetap disimpan di `results/hasil_evaluasi_delegasi.csv` dengan kolom tambahan parameter agregasi total history point dan informasi `workload_category` (Rendah/Sedang/Tinggi).
+### 2. Hasil Ekspor Data (Lokal)
+
+Saat dijalankan melalui CLI, data hasil clustering tetap disimpan di `results/hasil_evaluasi_delegasi.xlsx` dan `hasil_evaluasi_delegasi.csv`.
 
 ## 🎯 Manfaat untuk Evaluasi Delegasi
 
@@ -166,7 +169,7 @@ Data hasil clustering tetap disimpan di `results/hasil_evaluasi_delegasi.csv` de
 K-MEANS-CLUSTERING/
 ├── backend/            # API Server (Python/FastAPI)
 │   ├── assets/         # Dataset input
-│   ├── results/        # Export CSV & Grafik (.png)
+│   ├── results/        # Export CSV, Excel (.xlsx), & Grafik (.png)
 │   ├── main.py         # Logika K-Means
 │   └── requirements.txt
 ├── frontend/           # Aplikasi Web (Next.js)
