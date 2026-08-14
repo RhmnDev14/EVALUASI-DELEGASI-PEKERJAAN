@@ -43,7 +43,19 @@ pip install -r requirements.txt
 
 ## 📂 Format Dataset
 
-Dataset `.csv` harus memiliki kolom: `task_id`, `title`, `type`, `status`, `assignee`, `history_point`.
+Dataset `.csv` harus memiliki kolom-kolom berikut agar dapat diproses oleh sistem:
+- `sprint_id` (String)
+- `role` (String)
+- `assignee` (String)
+- `story_point` (Numeric)
+- `complexity_score` (Numeric)
+- `risk_score` (Numeric)
+- `dependency_score` (Numeric)
+- `uncertainty_score` (Numeric)
+- `volume_score` (Numeric)
+- `task_duration_hours` (Numeric)
+- `reopen_count` (Numeric)
+- `role_capacity` (Numeric)
 
 ---
 
