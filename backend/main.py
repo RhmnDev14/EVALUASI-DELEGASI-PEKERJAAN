@@ -14,6 +14,8 @@ from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.metrics import silhouette_score, davies_bouldin_score
 import uvicorn
+from openpyxl.drawing.image import Image
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 # =========================================================
 # FASTAPI
@@ -448,6 +450,166 @@ async def upload_file(
         )
 
         # =================================================
+        # EXCEL EXPORT
+        # =================================================
+        excel_path = 'results/hasil_evaluasi_delegasi.xlsx'
+        with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
+            cluster_summary.to_excel(writer, sheet_name='Ringkasan Klaster', startrow=5, index=False)
+            df_result.to_excel(writer, sheet_name='Detail Karyawan', index=False)
+
+            workbook = writer.book
+            
+            # Format Ringkasan Klaster
+            ws1 = writer.sheets['Ringkasan Klaster']
+            
+            thin_border = Border(
+                left=Side(style='thin', color="D1D5DB"), 
+                right=Side(style='thin', color="D1D5DB"), 
+                top=Side(style='thin', color="D1D5DB"), 
+                bottom=Side(style='thin', color="D1D5DB")
+            )
+            
+            # Add Stats Cards
+            title_font = Font(bold=True, size=14, color="1E3A8A")
+            label_font = Font(bold=True, color="6B7280")
+            value_font = Font(bold=True, size=16, color="4F46E5")
+            
+            ws1['A1'] = "HASIL ANALISIS BEBAN KERJA"
+            ws1['A1'].font = title_font
+            
+            ws1['A3'] = "USER TERANALISIS"
+            ws1['A3'].font = label_font
+            ws1['A4'] = len(df_result)
+            ws1['A4'].font = value_font
+            ws1['A4'].alignment = Alignment(horizontal='left')
+            
+            ws1['B3'] = "DAVIES-BOULDIN INDEX"
+            ws1['B3'].font = label_font
+            ws1['B4'] = round(dbi_val, 4)
+            ws1['B4'].font = value_font
+            ws1['B4'].alignment = Alignment(horizontal='left')
+            
+            ws1['C3'] = "JUMLAH CLUSTER"
+            ws1['C3'].font = label_font
+            ws1['C4'] = len(cluster_summary)
+            ws1['C4'].font = value_font
+            ws1['C4'].alignment = Alignment(horizontal='left')
+            
+            header_fill = PatternFill(start_color="10B981", end_color="10B981", fill_type="solid")
+            header_font = Font(color="FFFFFF", bold=True)
+            for cell in ws1["6:6"]:
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+                
+            for r in range(6, 6 + len(cluster_summary) + 1):
+                for c in range(1, len(cluster_summary.columns) + 1):
+                    ws1.cell(row=r, column=c).border = thin_border
+            
+            # Adjust column width for Ringkasan Klaster
+            for col in ws1.columns:
+                max_length = 0
+                column = col[0].column_letter 
+                for cell in col:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                ws1.column_dimensions[column].width = max_length + 2
+            
+            # Insert Chart to Ringkasan Klaster
+            if os.path.exists(preview_path):
+                img = Image(preview_path)
+                # Resize image slightly to fit nicely
+                img.width = 650
+                img.height = 450
+                # Insert at cell A14
+                ws1.add_image(img, 'A14')
+            
+            # Add Recommendations
+            ws1['A39'] = "💡 Rekomendasi Pemerataan Beban Kerja:"
+            ws1['A39'].font = Font(bold=True, size=14, color="1E3A8A")
+            
+            row = 41
+            for index, row_data in cluster_summary.iterrows():
+                cat = row_data['workload_category']
+                cluster_id = row_data['cluster']
+                
+                users = df_result[df_result['cluster'] == cluster_id]['assignee'].tolist()
+                users_str = ", ".join(users)
+                
+                start_col, end_col = 1, 7
+                
+                if cat == 'Tinggi':
+                    bg_color = "FEF2F2"
+                    border_color = "FCA5A5"
+                    ws1[f'A{row}'] = f"⚠️ Karyawan Beban Tinggi:"
+                    ws1[f'A{row}'].font = Font(bold=True, color="EF4444", size=12)
+                    ws1[f'A{row+1}'] = f"User: {users_str}"
+                    ws1[f'A{row+1}'].font = Font(bold=True)
+                    ws1[f'A{row+2}'] = "Peringatan: Karyawan ini memikul beban tugas tertinggi. Diperlukan pemerataan tugas (delegasi ulang) untuk menghindari bottleneck."
+                    ws1[f'A{row+2}'].font = Font(color="7F1D1D")
+                elif cat == 'Sedang':
+                    bg_color = "FFFBEB"
+                    border_color = "FCD34D"
+                    ws1[f'A{row}'] = f"⚖️ Karyawan Beban Sedang:"
+                    ws1[f'A{row}'].font = Font(bold=True, color="F59E0B", size=12)
+                    ws1[f'A{row+1}'] = f"User: {users_str}"
+                    ws1[f'A{row+1}'].font = Font(bold=True)
+                    ws1[f'A{row+2}'] = "Beban kerja karyawan ini relatif seimbang dan proporsional dengan kapasitas tim."
+                    ws1[f'A{row+2}'].font = Font(color="78350F")
+                elif cat == 'Rendah':
+                    bg_color = "ECFDF5"
+                    border_color = "6EE7B7"
+                    ws1[f'A{row}'] = f"🚀 Karyawan Beban Rendah:"
+                    ws1[f'A{row}'].font = Font(bold=True, color="10B981", size=12)
+                    ws1[f'A{row+1}'] = f"User: {users_str}"
+                    ws1[f'A{row+1}'].font = Font(bold=True)
+                    ws1[f'A{row+2}'] = "Karyawan ini masih memiliki kapasitas beban yang minim. Sangat direkomendasikan untuk mendelegasikan tugas-tugas tambahan kepada karyawan ini."
+                    ws1[f'A{row+2}'].font = Font(color="064E3B")
+                
+                fill = PatternFill(start_color=bg_color, end_color=bg_color, fill_type="solid")
+                
+                for r_idx in range(row, row+3):
+                    for c_idx in range(start_col, end_col + 1):
+                        cell = ws1.cell(row=r_idx, column=c_idx)
+                        cell.fill = fill
+                        
+                        top_side = Side(style='medium', color=border_color) if r_idx == row else None
+                        bottom_side = Side(style='medium', color=border_color) if r_idx == row+2 else None
+                        left_side = Side(style='medium', color=border_color) if c_idx == start_col else None
+                        right_side = Side(style='medium', color=border_color) if c_idx == end_col else None
+                        
+                        cell.border = Border(top=top_side, bottom=bottom_side, left=left_side, right=right_side)
+                
+                row += 4
+                
+            # Format Detail Karyawan
+            ws2 = writer.sheets['Detail Karyawan']
+            header_fill2 = PatternFill(start_color="3B82F6", end_color="3B82F6", fill_type="solid")
+            for cell in ws2["1:1"]:
+                cell.fill = header_fill2
+                cell.font = header_font
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+                
+            for r in range(1, 1 + len(df_result) + 1):
+                for c in range(1, len(df_result.columns) + 1):
+                    ws2.cell(row=r, column=c).border = thin_border
+            
+            # Adjust column width for Detail Karyawan
+            for col in ws2.columns:
+                max_length = 0
+                column = col[0].column_letter 
+                for cell in col:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                ws2.column_dimensions[column].width = max_length + 2
+
+        # =================================================
         # URL
         # =================================================
         base_url = str(request.base_url)
@@ -455,6 +617,8 @@ async def upload_file(
         preview_url = f"{base_url}preview"
 
         download_url = f"{base_url}download"
+
+        excel_url = f"{base_url}download-excel"
 
         return {
 
@@ -494,7 +658,7 @@ async def upload_file(
 
             "preview_url": preview_url,
 
-            "download_url": download_url,
+            "excel_url": excel_url,
 
             "data":
                 df_result.to_dict(
@@ -536,24 +700,23 @@ async def get_preview():
 
 
 # =========================================================
-# DOWNLOAD IMAGE
+# DOWNLOAD EXCEL
 # =========================================================
-@app.get("/download")
-async def download_preview():
+@app.get("/download-excel")
+async def download_excel():
 
-    preview_path = 'results/latest_preview.png'
+    excel_path = 'results/hasil_evaluasi_delegasi.xlsx'
 
-    if not os.path.exists(preview_path):
-
+    if not os.path.exists(excel_path):
         raise HTTPException(
             status_code=404,
-            detail="File tidak ditemukan."
+            detail="File Excel tidak ditemukan."
         )
 
     return FileResponse(
-        path=preview_path,
-        filename="hasil_evaluasi_delegasi.png",
-        media_type="image/png"
+        path=excel_path,
+        filename="hasil_evaluasi_delegasi.xlsx",
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
 

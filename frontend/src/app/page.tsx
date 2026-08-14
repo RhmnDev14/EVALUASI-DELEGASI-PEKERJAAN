@@ -24,6 +24,7 @@ export default function Home() {
     };
     preview_url: string;
     download_url: string;
+    excel_url: string;
     data: any[];
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -362,14 +363,15 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className={styles.actions}>
+              <div className={styles.actions} style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
                 <a 
-                  href={result.download_url} 
+                  href={result.excel_url} 
                   target="_blank" 
                   rel="noreferrer"
                   className={styles.button}
+                  style={{ background: '#10b981' }}
                 >
-                  📥 Download Laporan User (HD)
+                  📊 Download Laporan (Excel)
                 </a>
               </div>
             </div>
