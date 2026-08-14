@@ -403,6 +403,66 @@ async def get_template():
 
 
 # =========================================================
+# DRY RUN / VALIDASI
+# =========================================================
+@app.post("/dry-run")
+async def dry_run(file: UploadFile = File(...)):
+    
+    if not file.filename.endswith('.csv'):
+        raise HTTPException(
+            status_code=400,
+            detail="Hanya file CSV diperbolehkan."
+        )
+        
+    try:
+        contents = await file.read()
+        df = pd.read_csv(io.BytesIO(contents))
+        
+        missing_cols = [
+            col for col in REQUIRED_COLUMNS
+            if col not in df.columns
+        ]
+
+        if missing_cols:
+            raise ValueError(
+                f"Kolom tidak ditemukan: {', '.join(missing_cols)}"
+            )
+
+        if df.empty:
+            raise ValueError("Dataset kosong.")
+            
+        numeric_cols = [
+            'story_point', 'complexity_score', 'risk_score',
+            'dependency_score', 'uncertainty_score', 'volume_score',
+            'task_duration_hours', 'reopen_count', 'role_capacity'
+        ]
+
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        if df[numeric_cols].isnull().any().any():
+            raise ValueError("Terdapat data numerik invalid / kosong.")
+            
+        return {
+            "status": "success", 
+            "message": "File valid. Semua kolom yang dibutuhkan tersedia dan format data sesuai."
+        }
+        
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=400,
+            detail=str(ve)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Server Error: {str(e)}"
+        )
+
+
+
+# =========================================================
 # UPLOAD CSV
 # =========================================================
 @app.post("/upload")

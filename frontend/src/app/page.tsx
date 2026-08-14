@@ -7,6 +7,8 @@ export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [validationResult, setValidationResult] = useState<{status: string, message: string} | null>(null);
+  const [validating, setValidating] = useState(false);
   const [result, setResult] = useState<{
     status: string;
     message: string;
@@ -56,6 +58,36 @@ export default function Home() {
     }
   };
 
+  const handleDryRun = async () => {
+    if (!file) return;
+
+    setValidating(true);
+    setError(null);
+    setValidationResult(null);
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch('http://127.0.0.1:8000/dry-run', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.detail || 'Terjadi kesalahan saat memvalidasi data');
+      }
+
+      setValidationResult(data);
+    } catch (err: any) {
+      setError(err.message || 'Gagal terhubung ke server. Pastikan API berjalan.');
+    } finally {
+      setValidating(false);
+    }
+  };
+
   const handleUpload = async () => {
     if (!file) return;
 
@@ -88,6 +120,7 @@ export default function Home() {
 
   const clearSelection = () => {
     setFile(null);
+    setValidationResult(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -146,18 +179,39 @@ export default function Home() {
             </div>
           )}
 
+          {validationResult && (
+            <div className={`${styles.alert} ${styles.alertSuccess}`} style={{ marginBottom: '1rem' }}>
+              ✅ {validationResult.message}
+            </div>
+          )}
+
           <div style={{ display: 'flex', gap: '1rem', flexDirection: 'column' }}>
-            <button 
-              className={styles.button}
-              onClick={handleUpload}
-              disabled={!file || loading}
-            >
-              {loading ? (
-                <><div className={styles.spinner}></div> Menghitung Metrik...</>
-              ) : (
-                '🚀 Jalankan Evaluasi Delegasi'
-              )}
-            </button>
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              <button 
+                className={`${styles.button} ${styles.secondaryBtn}`}
+                onClick={handleDryRun}
+                disabled={!file || validating || loading}
+                style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}
+              >
+                {validating ? (
+                  <><div className={styles.spinner}></div> Memvalidasi...</>
+                ) : (
+                  '🔍 Validasi (Dry Run)'
+                )}
+              </button>
+              <button 
+                className={styles.button}
+                onClick={handleUpload}
+                disabled={!file || loading || validating}
+                style={{ flex: 2, display: 'flex', justifyContent: 'center', alignItems: 'center' }}
+              >
+                {loading ? (
+                  <><div className={styles.spinner}></div> Menghitung Metrik...</>
+                ) : (
+                  '🚀 Jalankan Evaluasi Delegasi'
+                )}
+              </button>
+            </div>
             
             <a 
               href="http://127.0.0.1:8000/template" 
