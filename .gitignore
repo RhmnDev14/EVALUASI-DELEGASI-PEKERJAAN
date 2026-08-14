@@ -60,3 +60,6 @@ yarn-error.log*
 
 # datasets
 *.csv
+*.docx
+text.txt
+thesis_extracted.txt

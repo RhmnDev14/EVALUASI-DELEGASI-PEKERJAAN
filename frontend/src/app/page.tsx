@@ -12,7 +12,7 @@ export default function Home() {
   const [result, setResult] = useState<{
     status: string;
     message: string;
-    silhouette_score: number;
+    davies_bouldin_index: number;
     cluster_summary: any[];
     role_analysis: any[];
     assignee_analysis: any[];
@@ -125,19 +125,18 @@ export default function Home() {
   };
 
   const getInterpretationBadge = (interpretation: string) => {
-    if (interpretation.includes('Overloaded') || interpretation.includes('Needs Improvement')) return styles.badgeDanger;
-    if (interpretation.includes('Standard')) return styles.badgeWarning;
-    if (interpretation.includes('High Performance')) return styles.badgeSuccess;
-    if (interpretation.includes('Quality Issues')) return styles.badgeWarning;
+    if (interpretation === 'Tinggi') return styles.badgeDanger;
+    if (interpretation === 'Sedang') return styles.badgeWarning;
+    if (interpretation === 'Rendah') return styles.badgeSuccess;
     return styles.badgePrimary;
   };
 
   return (
     <main className={styles.container}>
       <header className={styles.header}>
-        <h1 className={styles.title}>Evaluasi Efektivitas Delegasi Tugas</h1>
+        <h1 className={styles.title}>Pengelompokan Beban Kerja Karyawan</h1>
         <p className={styles.description}>
-          Analisis mendalam berdasarkan <strong>Velocity, Workload, Capacity, Quality</strong>, dan <strong>Delegation Efficiency</strong>.
+          Analisis pemerataan beban kerja tim berdasarkan pendekatan <strong>K-Means Clustering</strong> pada atribut History Point.
         </p>
       </header>
 
@@ -226,7 +225,7 @@ export default function Home() {
 
         {/* Result Section */}
         <section className={styles.card}>
-          <h2 className={styles.cardTitle}>Hasil Analisis Efektivitas Tim</h2>
+          <h2 className={styles.cardTitle}>Hasil Analisis Beban Kerja</h2>
           
           {result ? (
             <div className={styles.resultArea}>
@@ -240,46 +239,40 @@ export default function Home() {
                   <div className={styles.statValue}>{result.data.length}</div>
                 </div>
                 <div className={styles.statCard}>
-                  <div className={styles.statLabel}>Silhouette Score</div>
-                  <div className={styles.statValue}>{result.silhouette_score}</div>
+                  <div className={styles.statLabel}>Davies-Bouldin Index</div>
+                  <div className={styles.statValue}>{result.davies_bouldin_index}</div>
                 </div>
                 <div className={styles.statCard}>
-                  <div className={styles.statLabel}>Kelompok Performa</div>
+                  <div className={styles.statLabel}>Jumlah Cluster</div>
                   <div className={styles.statValue}>{result.cluster_summary.length}</div>
                 </div>
               </div>
 
-              <h3 className={styles.sectionTitle}>Peta Efektivitas Delegasi</h3>
+              <h3 className={styles.sectionTitle}>Peta Distribusi Beban Kerja</h3>
               <div className={styles.plotImage}>
                 <img src={`${result.preview_url}?t=${new Date().getTime()}`} alt="User Clustering Result Plot" />
               </div>
 
-              <h3 className={styles.sectionTitle}>Ringkasan Karakteristik Klaster (Metrik Agregat)</h3>
+              <h3 className={styles.sectionTitle}>Ringkasan Karakteristik Klaster</h3>
               <div className={styles.tableContainer}>
                 <table className={styles.table}>
                   <thead>
                     <tr>
                       <th>Klaster</th>
-                      <th>Velocity</th>
-                      <th>Workload</th>
-                      <th>Capacity</th>
-                      <th>Quality</th>
-                      <th>Efficiency Index</th>
-                      <th>Interpretasi</th>
+                      <th>Rata-rata History Point</th>
+                      <th>Jumlah Karyawan</th>
+                      <th>Kategori Beban Kerja</th>
                     </tr>
                   </thead>
                   <tbody>
                     {result.cluster_summary.map((c, i) => (
                       <tr key={i}>
                         <td><strong>#{c.cluster}</strong></td>
-                        <td>{(c.velocity_achievement * 100).toFixed(1)}%</td>
-                        <td>{c.workload_score}</td>
-                        <td>{(c.capacity_ratio * 100).toFixed(1)}%</td>
-                        <td>{(c.quality_factor * 100).toFixed(1)}%</td>
-                        <td><strong>{c.delegation_efficiency_index}</strong></td>
+                        <td>{c.total_history_point_mean.toFixed(2)}</td>
+                        <td>{c.employee_count}</td>
                         <td>
-                          <span className={`${styles.badge} ${getInterpretationBadge(c.interpretation)}`}>
-                            {c.interpretation}
+                          <span className={`${styles.badge} ${getInterpretationBadge(c.workload_category)}`}>
+                            {c.workload_category}
                           </span>
                         </td>
                       </tr>
@@ -288,18 +281,16 @@ export default function Home() {
                 </table>
               </div>
 
-              <h3 className={styles.sectionTitle}>Detail Performa per Assignee</h3>
+              <h3 className={styles.sectionTitle}>Detail Beban Kerja Karyawan</h3>
               <div className={styles.tableContainer}>
                 <table className={styles.table}>
                   <thead>
                     <tr>
                       <th>Assignee</th>
-                      <th>Role</th>
-                      <th>Velocity</th>
-                      <th>Workload</th>
-                      <th>Quality</th>
-                      <th>Eff. Index</th>
+                      <th>Role (Type)</th>
+                      <th>Total History Point</th>
                       <th>Klaster</th>
+                      <th>Kategori</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -307,13 +298,11 @@ export default function Home() {
                       <tr key={i}>
                         <td><strong>{u.assignee}</strong></td>
                         <td>{u.role}</td>
-                        <td>{(u.velocity_achievement * 100).toFixed(1)}%</td>
-                        <td>{u.workload_score}</td>
-                        <td>{(u.quality_factor * 100).toFixed(1)}%</td>
-                        <td><strong>{u.delegation_efficiency_index}</strong></td>
+                        <td>{u.total_history_point}</td>
+                        <td>#{u.cluster}</td>
                         <td>
-                          <span className={`${styles.badge} ${getInterpretationBadge(result.cluster_summary.find(cs => cs.cluster === u.cluster)?.interpretation || '')}`}>
-                            #{u.cluster}
+                          <span className={`${styles.badge} ${getInterpretationBadge(u.workload_category)}`}>
+                            {u.workload_category}
                           </span>
                         </td>
                       </tr>
@@ -324,41 +313,41 @@ export default function Home() {
 
               {/* Conclusion Section */}
               <div className={`${styles.card} ${styles.conclusionBox}`} style={{ marginTop: '1.5rem', background: 'linear-gradient(135deg, #f0f7ff 0%, #ffffff 100%)', border: '1px solid #bae6fd' }}>
-                <h3 className={styles.sectionTitle} style={{ marginTop: 0 }}>💡 Kesimpulan & Rekomendasi Manajemen</h3>
+                <h3 className={styles.sectionTitle} style={{ marginTop: 0 }}>💡 Rekomendasi Pemerataan Beban Kerja</h3>
                 <div style={{ fontSize: '0.95rem', lineHeight: '1.6' }}>
-                  <p>Berdasarkan analisis klastering terhadap <strong>{result.data.length} anggota tim</strong>, berikut adalah detail pembagian beban kerjanya:</p>
+                  <p>Berdasarkan hasil K-Means Clustering terhadap <strong>{result.data.length} karyawan</strong>, berikut adalah detail beban kerja:</p>
                   
                   <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                     {result.cluster_summary.map((cs, idx) => {
                       const usersInCluster = result.data.filter(u => u.cluster === cs.cluster);
                       const userNames = usersInCluster.map(u => u.assignee).join(', ');
                       
-                      if (cs.interpretation.includes('High Performance')) {
+                      if (cs.workload_category === 'Tinggi') {
                         return (
-                          <div key={idx} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.05)', borderLeft: '4px solid #10b981' }}>
-                            <strong>🚀 Kelompok High Performance:</strong>
-                            <p style={{ margin: '0.2rem 0' }}>User: <span style={{ color: '#065f46', fontWeight: 600 }}>{userNames}</span></p>
-                            <p style={{ fontSize: '0.85rem', color: '#064e3b' }}>Kelompok ini memiliki indeks efisiensi dan kualitas terbaik. Sangat handal untuk tugas-tugas kritikal.</p>
+                          <div key={idx} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.05)', borderLeft: '4px solid #ef4444' }}>
+                            <strong>⚠️ Karyawan Beban Tinggi:</strong>
+                            <p style={{ margin: '0.2rem 0' }}>User: <span style={{ color: '#b91c1c', fontWeight: 600 }}>{userNames}</span></p>
+                            <p style={{ fontSize: '0.85rem', color: '#7f1d1d' }}>Peringatan: Karyawan ini memikul beban tugas tertinggi. Diperlukan pemerataan tugas (delegasi ulang) untuk menghindari bottleneck.</p>
                           </div>
                         );
                       }
                       
-                      if (cs.interpretation.includes('Standard')) {
+                      if (cs.workload_category === 'Sedang') {
                         return (
                           <div key={idx} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.05)', borderLeft: '4px solid #f59e0b' }}>
-                            <strong>⚖️ Kelompok Standard Performance:</strong>
+                            <strong>⚖️ Karyawan Beban Sedang:</strong>
                             <p style={{ margin: '0.2rem 0' }}>User: <span style={{ color: '#92400e', fontWeight: 600 }}>{userNames}</span></p>
-                            <p style={{ fontSize: '0.85rem', color: '#78350f' }}>Beban kerja dan kualitas berada di level rata-rata tim. Performa sudah stabil.</p>
+                            <p style={{ fontSize: '0.85rem', color: '#78350f' }}>Beban kerja karyawan ini relatif seimbang dan proporsional dengan kapasitas tim.</p>
                           </div>
                         );
                       }
 
-                      if (cs.interpretation.includes('Needs Improvement') || cs.interpretation.includes('Overloaded')) {
+                      if (cs.workload_category === 'Rendah') {
                         return (
-                          <div key={idx} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.05)', borderLeft: '4px solid #ef4444' }}>
-                            <strong>⚠️ Kelompok Needs Improvement / Overloaded:</strong>
-                            <p style={{ margin: '0.2rem 0' }}>User: <span style={{ color: '#b91c1c', fontWeight: 600 }}>{userNames}</span></p>
-                            <p style={{ fontSize: '0.85rem', color: '#7f1d1d' }}>{cs.interpretation.includes('Overloaded') ? 'Peringatan: Kapasitas terlampaui!' : 'Perlu perhatian khusus pada kualitas hasil kerja atau distribusi beban.'}</p>
+                          <div key={idx} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.05)', borderLeft: '4px solid #10b981' }}>
+                            <strong>🚀 Karyawan Beban Rendah:</strong>
+                            <p style={{ margin: '0.2rem 0' }}>User: <span style={{ color: '#065f46', fontWeight: 600 }}>{userNames}</span></p>
+                            <p style={{ fontSize: '0.85rem', color: '#064e3b' }}>Karyawan ini masih memiliki kapasitas beban yang minim. Sangat direkomendasikan untuk mendelegasikan tugas-tugas tambahan kepada karyawan ini.</p>
                           </div>
                         );
                       }
@@ -368,12 +357,7 @@ export default function Home() {
                   </div>
 
                   <div style={{ marginTop: '1.5rem', padding: '0.75rem', borderTop: '1px dashed var(--border)' }}>
-                    <p>📊 <strong>Insight Utama:</strong> Total beban Story Point tertinggi dipikul oleh <strong>{
-                      (() => {
-                        const top = [...result.data].sort((a, b) => b.story_point - a.story_point)[0];
-                        return top ? `${top.assignee} (${top.story_point} SP)` : '-';
-                      })()
-                    }</strong>.</p>
+                    <p>📊 <strong>Insight:</strong> Kualitas clustering ditunjukkan oleh nilai Davies-Bouldin Index (<strong>{result.davies_bouldin_index}</strong>), di mana nilai yang lebih kecil menunjukkan hasil pemisahan klaster yang lebih baik.</p>
                   </div>
                 </div>
               </div>

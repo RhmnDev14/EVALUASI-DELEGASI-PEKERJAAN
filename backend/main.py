@@ -12,8 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.metrics import silhouette_score
-
+from sklearn.metrics import silhouette_score, davies_bouldin_score
 import uvicorn
 
 # =========================================================
@@ -67,7 +66,7 @@ REQUIRED_COLUMNS = [
 def perform_clustering(df, k=3):
 
     # =====================================================
-    # VALIDASI DATASET
+    # PHASE 1: VALIDASI DATASET & PREPROCESSING
     # =====================================================
     missing_cols = [
         col for col in REQUIRED_COLUMNS
@@ -82,154 +81,68 @@ def perform_clustering(df, k=3):
     if df.empty:
         raise ValueError("Dataset kosong.")
 
-    # =====================================================
     # CLEANING
-    # =====================================================
-    df['sprint_id'] = df['sprint_id'].astype(str).str.strip()
-    df['role'] = df['role'].astype(str).str.strip()
     df['assignee'] = df['assignee'].astype(str).str.strip()
+    df['story_point'] = pd.to_numeric(df['story_point'], errors='coerce')
+    df = df.dropna(subset=['assignee', 'story_point'])
 
     # =====================================================
-    # VALIDASI NUMERIK
-    # =====================================================
-    numeric_cols = [
-        'story_point',
-        'complexity_score',
-        'risk_score',
-        'dependency_score',
-        'uncertainty_score',
-        'volume_score',
-        'task_duration_hours',
-        'reopen_count',
-        'role_capacity'
-    ]
-
-    for col in numeric_cols:
-        df[col] = pd.to_numeric(
-            df[col],
-            errors='coerce'
-        )
-
-    if df[numeric_cols].isnull().any().any():
-        raise ValueError(
-            "Terdapat data numerik invalid / kosong."
-        )
-
-    df = df.dropna()
-
-    # =====================================================
-    # AGREGASI PER ASSIGNEE (CLUSTERING USER)
-    # =====================================================
-    # Menghitung Delegation Score per Tugas dahulu
-    df['delegation_score'] = (
-        (df['story_point'] + df['complexity_score'] + df['risk_score']) /
-        (df['role_capacity'] + 1)
-    )
-
-    # =====================================================
-    # KALKULASI METRIK CANGGIH PER TUGAS
-    # =====================================================
-    df['workload_val'] = df['story_point'] * df['complexity_score']
-    
-    # =====================================================
-    # AGREGASI PER ASSIGNEE (CLUSTERING USER)
+    # PHASE 2 & 3: AGREGASI PER KARYAWAN & FEATURE
     # =====================================================
     df_user = df.groupby('assignee').agg({
         'story_point': 'sum',
-        'complexity_score': 'mean',
-        'risk_score': 'mean',
-        'task_duration_hours': 'sum',
-        'reopen_count': 'sum',
-        'role_capacity': 'mean',
-        'workload_val': 'sum',
-        'role': 'first'
+        'role': 'first' # Data tambahan/context, tidak diikutkan clustering
     }).reset_index()
 
-    # Tambahkan jumlah tugas
-    df_user['task_count'] = df.groupby('assignee').size().values
-
-    # 1. VELOCITY ACHIEVEMENT (Total SP / Capacity)
-    df_user['velocity_achievement'] = (df_user['story_point'] / (df_user['role_capacity'] + 1)).round(4)
+    df_user.rename(columns={'story_point': 'total_history_point'}, inplace=True)
     
-    # 2. WORKLOAD SCORE (Normalized Workload Value)
-    df_user['workload_score'] = (df_user['workload_val'] / (df_user['task_count'] + 1)).round(2)
-    
-    # 3. CAPACITY RATIO (Duration vs Capacity)
-    # Asumsi: role_capacity dalam SP, dikonversi ke estimasi jam (misal 1 SP = 8 jam)
-    df_user['capacity_ratio'] = (df_user['task_duration_hours'] / ((df_user['role_capacity'] * 8) + 1)).round(4)
-    
-    # 4. QUALITY FACTOR (Rework Inverse)
-    df_user['quality_factor'] = (1 / (df_user['reopen_count'] + 1)).round(4)
-    
-    # 5. DELEGATION EFFICIENCY INDEX (Combined)
-    df_user['delegation_efficiency_index'] = (
-        (df_user['velocity_achievement'] + df_user['quality_factor']) / 2
-    ).round(4)
+    # Feature matriks hanya history point per skripsi
+    X = df_user[['total_history_point']]
 
     # =====================================================
-    # FEATURE LIST UNTUK CLUSTERING USER
-    # =====================================================
-    features_list = [
-        'velocity_achievement',
-        'workload_score',
-        'capacity_ratio',
-        'quality_factor',
-        'delegation_efficiency_index'
-    ]
-
-    X = df_user[features_list]
-
-    # =====================================================
-    # SCALING & KMEANS
+    # PHASE 4: K-MEANS K=3
     # =====================================================
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
-    kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+    # Harus K=3 secara metodologis
+    kmeans = KMeans(n_clusters=3, random_state=42, n_init=10)
     df_user['cluster'] = kmeans.fit_predict(X_scaled)
 
-    silhouette = silhouette_score(X_scaled, df_user['cluster'])
-
     # =====================================================
-    # CLUSTER SUMMARY
+    # PHASE 5: CENTROID & INTERPRETASI CLUSTER
     # =====================================================
-    cluster_summary = (
-        df_user
-        .groupby('cluster')[features_list]
-        .mean()
-        .round(4)
-    )
-
-    # =====================================================
-    # INTERPRETASI CLUSTER USER (RANKING)
-    # =====================================================
-    ranked_clusters = cluster_summary['delegation_efficiency_index'].sort_values(ascending=False).index.tolist()
+    centroids = kmeans.cluster_centers_
+    original_centroids = scaler.inverse_transform(centroids).flatten()
     
-    def interpret_user_cluster_ranked(row):
-        cluster_id = row.name
-        rank = ranked_clusters.index(cluster_id)
-        
-        if rank == 0:
-            label = "High Performance Group"
-        elif rank == 1:
-            label = "Standard Performance Group"
-        else:
-            label = "Needs Improvement Group"
+    # Mengurutkan index centroid dari terendah ke tertinggi
+    sorted_idx = np.argsort(original_centroids)
+    
+    cluster_mapping = {
+        sorted_idx[0]: "Rendah",
+        sorted_idx[1]: "Sedang",
+        sorted_idx[2]: "Tinggi"
+    }
 
-        # Warnings
-        if row['capacity_ratio'] > 0.9:
-            return f"{label} (Overloaded Risk)"
-        if row['quality_factor'] < 0.5:
-            return f"{label} (Quality Issues)"
-        
-        return label
+    df_user['workload_category'] = df_user['cluster'].map(cluster_mapping)
 
-    cluster_summary['interpretation'] = cluster_summary.apply(interpret_user_cluster_ranked, axis=1)
+    cluster_summary = df_user.groupby('cluster').agg(
+        total_history_point_mean=('total_history_point', 'mean'),
+        employee_count=('assignee', 'count')
+    ).reset_index()
+    
+    cluster_summary['workload_category'] = cluster_summary['cluster'].map(cluster_mapping)
+
+    # =====================================================
+    # PHASE 6: DAVIES-BOULDIN INDEX
+    # =====================================================
+    # Skripsi menggunakan DBI, semakin kecil semakin baik.
+    dbi = davies_bouldin_score(X_scaled, df_user['cluster'])
 
     return (
-        df_user,        # Sekarang mengembalikan data per USER, bukan per TASK
+        df_user,
         cluster_summary,
-        silhouette,
+        dbi,
         X_scaled
     )
 
@@ -263,7 +176,7 @@ def calculate_elbow(X_scaled):
 # =========================================================
 def generate_preview(
     df_result,
-    silhouette_score_value,
+    dbi_value,
     output_path='results/latest_preview.png'
 ):
 
@@ -277,22 +190,22 @@ def generate_preview(
     sns.scatterplot(
         data=df_result,
         x='assignee',
-        y='story_point',
-        hue='cluster',
-        palette='viridis',
+        y='total_history_point',
+        hue='workload_category',
+        palette={'Rendah': '#10b981', 'Sedang': '#f59e0b', 'Tinggi': '#ef4444'},
         s=140,
         alpha=0.85,
         edgecolor='black'
     )
 
     plt.title(
-        'Evaluasi Efektivitas Delegasi Tugas',
+        'Pengelompokan Beban Kerja Karyawan',
         fontsize=18,
         fontweight='bold'
     )
 
     plt.xlabel('Assignee')
-    plt.ylabel('Story Point')
+    plt.ylabel('Total History Point')
 
     plt.xticks(rotation=45)
 
@@ -302,34 +215,21 @@ def generate_preview(
     total_tasks = len(df_result)
 
     overload_tasks = len(
-        df_result[
-            (
-                df_result['story_point'] >= 8
-            )
-            &
-            (
-                df_result['task_duration_hours'] >= 40
-            )
-        ]
+        df_result[df_result['workload_category'] == 'Tinggi']
     )
 
-    high_rework = len(
-        df_result[
-            df_result['reopen_count'] >= 2
-        ]
-    )
+    high_rework = 0
 
     summary_text = (
         f"📊 Delegation Analytics\n\n"
         f"Total Task: {total_tasks}\n"
-        f"Silhouette Score: {silhouette_score_value:.4f}\n"
-        f"Overload Task: {overload_tasks}\n"
-        f"High Rework: {high_rework}\n\n"
+        f"Davies-Bouldin Index: {dbi_value:.4f}\n"
+        f"Karyawan Beban Tinggi: {overload_tasks}\n\n"
         f"💡 Insight:\n"
-        f"Cluster digunakan untuk\n"
-        f"mengevaluasi efektivitas\n"
-        f"delegasi tugas berdasarkan\n"
-        f"distribusi workload Scrum."
+        f"Klaster digunakan untuk\n"
+        f"evaluasi pemerataan beban\n"
+        f"kerja secara objektif\n"
+        f"menggunakan K-Means."
     )
 
     plt.text(
@@ -488,7 +388,7 @@ async def upload_file(
         (
             df_result,
             cluster_summary,
-            silhouette,
+            dbi_val,
             X_scaled
         ) = perform_clustering(df)
 
@@ -499,7 +399,7 @@ async def upload_file(
 
         generate_preview(
             df_result,
-            silhouette,
+            dbi_val,
             preview_path
         )
 
@@ -535,7 +435,7 @@ async def upload_file(
         # =================================================
         role_workload = (
             df_result
-            .groupby('role')['story_point']
+            .groupby('role')['total_history_point']
             .sum()
             .reset_index(name='total_story_point')
         )
@@ -544,10 +444,7 @@ async def upload_file(
         # ASSIGNEE WORKLOAD
         # =================================================
         assignee_workload = (
-            df_result
-            .groupby('assignee')['story_point']
-            .sum()
-            .reset_index(name='total_story_point')
+            df_result[['assignee', 'total_history_point', 'workload_category']]
         )
 
         # =================================================
@@ -564,10 +461,10 @@ async def upload_file(
             "status": "success",
 
             "message":
-                "Evaluasi efektivitas delegasi berhasil dilakukan.",
+                "Clustering beban kerja berhasil dilakukan.",
 
-            "silhouette_score":
-                round(silhouette, 4),
+            "davies_bouldin_index":
+                round(dbi_val, 4),
 
             "cluster_summary":
                 cluster_summary
@@ -667,7 +564,7 @@ def run_local():
 
     print("=== Evaluasi Efektivitas Delegasi ===")
 
-    file_path = 'assets/dataset_evaluasi_delegasi_tugas.csv'
+    file_path = 'kmeans_dataset_updated.csv'
 
     if not os.path.exists(file_path):
 
@@ -680,16 +577,16 @@ def run_local():
     (
         df_result,
         cluster_summary,
-        silhouette,
+        dbi_val,
         X_scaled
     ) = perform_clustering(df)
 
     # =====================================================
     # PRINT ANALYSIS
     # =====================================================
-    print("\n=== SILHOUETTE SCORE ===")
+    print("\n=== DAVIES-BOULDIN INDEX ===")
 
-    print(round(silhouette, 4))
+    print(round(dbi_val, 4))
 
     print("\n=== CLUSTER SUMMARY ===")
 
@@ -703,23 +600,23 @@ def run_local():
     sns.scatterplot(
         data=df_result,
         x='assignee',
-        y='story_point',
-        hue='cluster',
-        palette='viridis',
+        y='total_history_point',
+        hue='workload_category',
+        palette={'Rendah': '#10b981', 'Sedang': '#f59e0b', 'Tinggi': '#ef4444'},
         s=120
     )
 
     plt.title(
-        'Evaluasi Efektivitas Delegasi Tugas'
+        'Pengelompokan Beban Kerja Karyawan'
     )
 
     plt.xlabel('Assignee')
 
-    plt.ylabel('Story Point')
+    plt.ylabel('Total History Point')
 
     plt.xticks(rotation=45)
 
-    plt.show()
+    # plt.show() # Disable for headless execution
 
     # =====================================================
     # SAVE RESULT

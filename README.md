@@ -1,18 +1,29 @@
-# K-Means Clustering: Evaluasi Delegasi Pekerjaan
+# Pengelompokan Beban Kerja Karyawan Menggunakan Metode K-Means Clustering pada PT PLN Icon Plus
 
-Proyek ini merupakan implementasi algoritma **K-Means Clustering** yang digunakan untuk mendukung penelitian skripsi dengan judul **"Evaluasi Delegasi Pekerjaan"**. Sistem ini bertujuan untuk mengelompokkan data delegasi pekerjaan berdasarkan parameter tertentu untuk mengevaluasi efektivitas dan distribusi beban kerja.
+Proyek ini merupakan implementasi algoritma **K-Means Clustering** yang digunakan untuk mendukung penelitian skripsi dengan judul **"Pengelompokan Beban Kerja Karyawan Menggunakan Metode K-Means Clustering pada PT PLN Icon Plus"**. Sistem ini bertujuan untuk mengelompokkan karyawan divisi DGE berdasarkan beban kerja secara objektif untuk evaluasi pemerataan tugas.
 
 ## 📌 Deskripsi Proyek
 
-Delegasi pekerjaan yang efisien adalah kunci produktivitas organisasi. Dengan menggunakan metode K-Means, proyek ini mengelompokkan data (seperti durasi penyelesaian, kompleksitas tugas, dan performa staf) ke dalam beberapa klaster untuk mendapatkan wawasan tentang pola delegasi yang terjadi.
+Penelitian ini menerapkan algoritma K-Means Clustering untuk mengelompokkan karyawan berdasarkan agregasi bobot kerjanya, lalu mengevaluasi distribusi beban kerja tersebut pada tiap penerima tugas secara objektif. Pengelompokan K-Means secara matematis murni menggunakan 1 dimensi, yaitu akumulasi bobot pekerjaan (total history point / story point) per karyawan, sementara atribut tipe pekerjaan (role) dipertahankan sebagai atribut kontekstual untuk analisis pasca-klastering.
+
+## 🏗️ Arsitektur Proses
+
+Berikut adalah alur data algoritma dari dataset mentah hingga tahap evaluasi akhir:
+1. **Data Task**: Penarikan dataset penugasan yang mencakup *Assignee*, *Role*, dan *Story Point*.
+2. **Aggregation**: Pengelompokan (Group By) berdasarkan *Assignee*, lalu dilakukan penjumlahan (Sum) seluruh *Story Point* menjadi variabel `total_history_point`.
+3. **Standardization**: Normalisasi distribusi `total_history_point` menggunakan `StandardScaler`.
+4. **K-Means Clustering**: Menjalankan algoritma K-Means dengan batas `K=3` (Rendah, Sedang, Tinggi) pada matriks fitur 1-dimensi.
+5. **Centroid-based Labeling**: Melakukan pengurutan (*sorting*) nilai centroid dari yang terkecil ke terbesar untuk menetapkan pemetaan kategori beban kerja secara otomatis dan anti-bias.
+6. **Evaluation**: Menghitung kualitas dan kepadatan pemisahan klaster menggunakan metrik *Davies-Bouldin Index (DBI)*.
+7. **Contextual Analysis**: Menabulasikan silang hasil klastering dengan parameter *Role* untuk evaluasi sebaran beban kerja antar departemen.
 
 ## 🚀 Fitur Utama
 
 - **REST API (FastAPI)**: Memungkinkan integrasi dengan aplikasi lain (Web/Mobile).
-- **Analisis K-Means**: Pengelompokan tugas otomatis berdasarkan metrik performa komprehensif (_Velocity, Workload, Capacity, Quality_).
+- **Analisis K-Means**: Pengelompokan beban kerja karyawan menggunakan K=3 (Rendah, Sedang, Tinggi).
 - **Validasi Cepat (Dry Run)**: Fitur untuk memvalidasi format dan kelengkapan data sebelum diproses secara penuh.
 - **Visualisasi Premium (Seaborn)**: Grafik distribusi beban per _assignee_ dengan resolusi tinggi.
-- **Ringkasan Analisis Otomatis**: Deteksi _High Performance_, _Standard Performance_, dan kelompok berisiko (_Overloaded_/_Quality Issues_).
+- **Evaluasi Klaster**: Penghitungan kualitas klaster menggunakan **Davies-Bouldin Index (DBI)**.
 - **Manajemen Template**: Endpoint untuk mengunduh template CSV standar.
 
 ## 🛠️ Teknologi yang Digunakan
@@ -129,19 +140,19 @@ Jika Anda lebih suka menjalankan secara manual di terminal terpisah:
 
 ### 1. Visualisasi Grafik (`/preview` atau Web)
 
-Grafik kini menyajikan analisis yang lebih mendalam:
+Grafik menyajikan analisis yang mendalam mengenai distribusi beban kerja:
 
 - **Sumbu X**: Menampilkan nama **Assignee** (Penerima Tugas).
-- **Sumbu Y**: Menampilkan **Story Point** (Beban Kerja).
-- **Panel Ringkasan (Kanan)**: Menampilkan total tugas, Silhouette Score, tugas yang _overload_, dan tugas dengan tingkat _rework_ tinggi.
+- **Sumbu Y**: Menampilkan **Total History Point** (Total Beban Kerja).
+- **Panel Ringkasan (Kanan)**: Menampilkan total tugas, **Davies-Bouldin Index**, dan jumlah karyawan dengan beban tinggi.
 - **Kategori Klaster / Interpretasi**:
-  - **High Performance Group**: Efisiensi dan kualitas terbaik. Sangat handal untuk tugas-tugas kritikal.
-  - **Standard Performance Group**: Beban kerja dan kualitas berada di level rata-rata tim.
-  - **Needs Improvement / Overloaded**: Peringatan akan kapasitas yang terlampaui atau perlu perhatian khusus pada kualitas kerja.
+  - **Karyawan Beban Rendah**: Kapasitas beban kerja minim, direkomendasikan untuk menerima delegasi tugas tambahan.
+  - **Karyawan Beban Sedang**: Beban kerja seimbang dan proporsional.
+  - **Karyawan Beban Tinggi**: Memikul beban tertinggi. Diperlukan pemerataan (delegasi ulang) untuk menghindari bottleneck.
 
 ### 2. Hasil Ekspor Data
 
-Data hasil clustering tetap disimpan di `results/hasil_evaluasi_delegasi.csv` dengan kolom tambahan parameter efisiensi dan informasi `cluster`.
+Data hasil clustering tetap disimpan di `results/hasil_evaluasi_delegasi.csv` dengan kolom tambahan parameter agregasi total history point dan informasi `workload_category` (Rendah/Sedang/Tinggi).
 
 ## 🎯 Manfaat untuk Evaluasi Delegasi
 
@@ -164,7 +175,7 @@ K-MEANS-CLUSTERING/
 
 ## ✍️ Penulis
 
-- **Judul Skripsi**: Evaluasi Delegasi Pekerjaan
+- **Judul Skripsi**: Pengelompokan Beban Kerja Karyawan Menggunakan Metode K-Means Clustering pada PT PLN Icon Plus
 - **Instansi**: Universitas Indraprasta PGRI Jakarta
 
 ---
