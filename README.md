@@ -9,9 +9,10 @@ Delegasi pekerjaan yang efisien adalah kunci produktivitas organisasi. Dengan me
 ## 🚀 Fitur Utama
 
 - **REST API (FastAPI)**: Memungkinkan integrasi dengan aplikasi lain (Web/Mobile).
-- **Analisis K-Means**: Pengelompokan tugas otomatis berdasarkan bobot kerja (_history points_).
+- **Analisis K-Means**: Pengelompokan tugas otomatis berdasarkan metrik performa komprehensif (_Velocity, Workload, Capacity, Quality_).
+- **Validasi Cepat (Dry Run)**: Fitur untuk memvalidasi format dan kelengkapan data sebelum diproses secara penuh.
 - **Visualisasi Premium (Seaborn)**: Grafik distribusi beban per _assignee_ dengan resolusi tinggi.
-- **Ringkasan Analisis Otomatis**: Deteksi beban terberat dan rekomendasi delegasi langsung pada grafik.
+- **Ringkasan Analisis Otomatis**: Deteksi _High Performance_, _Standard Performance_, dan kelompok berisiko (_Overloaded_/_Quality Issues_).
 - **Manajemen Template**: Endpoint untuk mengunduh template CSV standar.
 
 ## 🛠️ Teknologi yang Digunakan
@@ -106,8 +107,10 @@ Jika Anda lebih suka menjalankan secara manual di terminal terpisah:
 2. **Dokumentasi Interaktif**: Buka `http://127.0.0.1:8000/`. Anda akan diarahkan ke **Swagger UI**.
 3. **Alur Kerja**:
    - `GET /template` untuk mendapatkan contoh file.
-   - `POST /upload` untuk memproses data.
+   - `POST /dry-run` untuk memvalidasi data CSV tanpa menjalankan clustering.
+   - `POST /upload` untuk memproses data dan menjalankan K-Means.
    - `GET /preview` untuk melihat visualisasi hasil terbaru.
+   - `GET /download` untuk mengunduh laporan grafik resolusi tinggi.
 
 ### C. Penggunaan Lokal (CLI)
 
@@ -129,16 +132,16 @@ Jika Anda lebih suka menjalankan secara manual di terminal terpisah:
 Grafik kini menyajikan analisis yang lebih mendalam:
 
 - **Sumbu X**: Menampilkan nama **Assignee** (Penerima Tugas).
-- **Sumbu Y**: Menampilkan **History Points** (Beban Kerja).
-- **Panel Ringkasan (Kanan)**: Menampilkan total tugas, siapa yang memegang beban terberat, dan rekomendasi delegasi otomatis.
-- **Kategori Klaster**:
-  - **Beban Rendah**: Tugas rutin/sederhana.
-  - **Beban Sedang**: Tugas dengan kompleksitas menengah.
-  - **Beban Tinggi**: Tugas kritis yang membutuhkan perhatian khusus.
+- **Sumbu Y**: Menampilkan **Story Point** (Beban Kerja).
+- **Panel Ringkasan (Kanan)**: Menampilkan total tugas, Silhouette Score, tugas yang _overload_, dan tugas dengan tingkat _rework_ tinggi.
+- **Kategori Klaster / Interpretasi**:
+  - **High Performance Group**: Efisiensi dan kualitas terbaik. Sangat handal untuk tugas-tugas kritikal.
+  - **Standard Performance Group**: Beban kerja dan kualitas berada di level rata-rata tim.
+  - **Needs Improvement / Overloaded**: Peringatan akan kapasitas yang terlampaui atau perlu perhatian khusus pada kualitas kerja.
 
 ### 2. Hasil Ekspor Data
 
-Data hasil clustering tetap disimpan di `results/hasil_clustering_delegasi.csv` dengan kolom tambahan `cluster`.
+Data hasil clustering tetap disimpan di `results/hasil_evaluasi_delegasi.csv` dengan kolom tambahan parameter efisiensi dan informasi `cluster`.
 
 ## 🎯 Manfaat untuk Evaluasi Delegasi
 
