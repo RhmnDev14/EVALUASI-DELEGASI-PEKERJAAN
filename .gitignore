@@ -57,3 +57,6 @@ yarn-error.log*
 
 # vercel
 .vercel/
+
+# datasets
+*.csv

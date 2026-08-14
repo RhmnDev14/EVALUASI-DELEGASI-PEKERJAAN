@@ -2,263 +2,711 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler, LabelEncoder
 import os
 import io
+import argparse
+
 from fastapi import FastAPI, Response, UploadFile, File, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
+
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.metrics import silhouette_score
+
 import uvicorn
-import argparse
 
-app = FastAPI(title="API Evaluasi Delegasi Pekerjaan")
+# =========================================================
+# FASTAPI
+# =========================================================
+app = FastAPI(
+    title="API Evaluasi Efektivitas Delegasi Tugas"
+)
 
-# Konfigurasi CORS agar bisa diakses oleh frontend (Next.js)
+# =========================================================
+# CORS
+# =========================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Mengizinkan semua origin (untuk development)
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# =========================================================
+# ROOT
+# =========================================================
 @app.get("/", include_in_schema=False)
 async def root():
-    """Redirect ke halaman dokumentasi Swagger"""
     return RedirectResponse(url="/docs")
 
+
+# =========================================================
+# REQUIRED DATASET COLUMNS
+# =========================================================
+REQUIRED_COLUMNS = [
+    'sprint_id',
+    'role',
+    'assignee',
+    'story_point',
+    'complexity_score',
+    'risk_score',
+    'dependency_score',
+    'uncertainty_score',
+    'volume_score',
+    'task_duration_hours',
+    'reopen_count',
+    'role_capacity'
+]
+
+
+# =========================================================
+# PREPROCESSING + KMEANS
+# =========================================================
 def perform_clustering(df, k=3):
-    """Fungsi inti untuk melakukan K-Means Clustering dengan Validasi Ketat"""
-    # 1. Validasi Kelengkapan Kolom
-    required_cols = ['task_id', 'title', 'type', 'status', 'assignee', 'history_point']
-    missing_cols = [col for col in required_cols if col not in df.columns]
+
+    # =====================================================
+    # VALIDASI DATASET
+    # =====================================================
+    missing_cols = [
+        col for col in REQUIRED_COLUMNS
+        if col not in df.columns
+    ]
+
     if missing_cols:
-        raise ValueError(f"File tidak lengkap! Kolom berikut tidak ditemukan: {', '.join(missing_cols)}")
+        raise ValueError(
+            f"Kolom tidak ditemukan: {', '.join(missing_cols)}"
+        )
 
-    # 2. Validasi Data Kosong
     if df.empty:
-        raise ValueError("File CSV kosong atau tidak memiliki data.")
-    
-    # 3. Validasi Tipe Data history_point (Harus Numerik)
-    df['history_point'] = pd.to_numeric(df['history_point'], errors='coerce')
-    if df['history_point'].isnull().any():
-        raise ValueError("Kolom 'history_point' harus berisi angka dan tidak boleh kosong.")
+        raise ValueError("Dataset kosong.")
 
-    # 4. Pembersihan Data (Drop baris yang memiliki nilai NaN pada kolom kunci)
-    df = df.dropna(subset=['type', 'history_point', 'assignee'])
+    # =====================================================
+    # CLEANING
+    # =====================================================
+    df['sprint_id'] = df['sprint_id'].astype(str).str.strip()
+    df['role'] = df['role'].astype(str).str.strip()
+    df['assignee'] = df['assignee'].astype(str).str.strip()
 
-    # Preprocessing
-    le_type = LabelEncoder()
-    df['type_encoded'] = le_type.fit_transform(df['type'].astype(str))
+    # =====================================================
+    # VALIDASI NUMERIK
+    # =====================================================
+    numeric_cols = [
+        'story_point',
+        'complexity_score',
+        'risk_score',
+        'dependency_score',
+        'uncertainty_score',
+        'volume_score',
+        'task_duration_hours',
+        'reopen_count',
+        'role_capacity'
+    ]
+
+    for col in numeric_cols:
+        df[col] = pd.to_numeric(
+            df[col],
+            errors='coerce'
+        )
+
+    if df[numeric_cols].isnull().any().any():
+        raise ValueError(
+            "Terdapat data numerik invalid / kosong."
+        )
+
+    df = df.dropna()
+
+    # =====================================================
+    # AGREGASI PER ASSIGNEE (CLUSTERING USER)
+    # =====================================================
+    # Menghitung Delegation Score per Tugas dahulu
+    df['delegation_score'] = (
+        (df['story_point'] + df['complexity_score'] + df['risk_score']) /
+        (df['role_capacity'] + 1)
+    )
+
+    # =====================================================
+    # KALKULASI METRIK CANGGIH PER TUGAS
+    # =====================================================
+    df['workload_val'] = df['story_point'] * df['complexity_score']
     
-    features_list = ['history_point', 'type_encoded']
-    X = df[features_list]
+    # =====================================================
+    # AGREGASI PER ASSIGNEE (CLUSTERING USER)
+    # =====================================================
+    df_user = df.groupby('assignee').agg({
+        'story_point': 'sum',
+        'complexity_score': 'mean',
+        'risk_score': 'mean',
+        'task_duration_hours': 'sum',
+        'reopen_count': 'sum',
+        'role_capacity': 'mean',
+        'workload_val': 'sum',
+        'role': 'first'
+    }).reset_index()
+
+    # Tambahkan jumlah tugas
+    df_user['task_count'] = df.groupby('assignee').size().values
+
+    # 1. VELOCITY ACHIEVEMENT (Total SP / Capacity)
+    df_user['velocity_achievement'] = (df_user['story_point'] / (df_user['role_capacity'] + 1)).round(4)
     
+    # 2. WORKLOAD SCORE (Normalized Workload Value)
+    df_user['workload_score'] = (df_user['workload_val'] / (df_user['task_count'] + 1)).round(2)
+    
+    # 3. CAPACITY RATIO (Duration vs Capacity)
+    # Asumsi: role_capacity dalam SP, dikonversi ke estimasi jam (misal 1 SP = 8 jam)
+    df_user['capacity_ratio'] = (df_user['task_duration_hours'] / ((df_user['role_capacity'] * 8) + 1)).round(4)
+    
+    # 4. QUALITY FACTOR (Rework Inverse)
+    df_user['quality_factor'] = (1 / (df_user['reopen_count'] + 1)).round(4)
+    
+    # 5. DELEGATION EFFICIENCY INDEX (Combined)
+    df_user['delegation_efficiency_index'] = (
+        (df_user['velocity_achievement'] + df_user['quality_factor']) / 2
+    ).round(4)
+
+    # =====================================================
+    # FEATURE LIST UNTUK CLUSTERING USER
+    # =====================================================
+    features_list = [
+        'velocity_achievement',
+        'workload_score',
+        'capacity_ratio',
+        'quality_factor',
+        'delegation_efficiency_index'
+    ]
+
+    X = df_user[features_list]
+
+    # =====================================================
+    # SCALING & KMEANS
+    # =====================================================
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
-    # K-Means
     kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
-    df['cluster'] = kmeans.fit_predict(X_scaled)
-    
-    return df, le_type
+    df_user['cluster'] = kmeans.fit_predict(X_scaled)
 
-def generate_preview(df_result, le_type, output_path='results/latest_preview.png'):
-    """Fungsi untuk membuat dan menyimpan grafik clustering yang lebih user-friendly"""
+    silhouette = silhouette_score(X_scaled, df_user['cluster'])
+
+    # =====================================================
+    # CLUSTER SUMMARY
+    # =====================================================
+    cluster_summary = (
+        df_user
+        .groupby('cluster')[features_list]
+        .mean()
+        .round(4)
+    )
+
+    # =====================================================
+    # INTERPRETASI CLUSTER USER (RANKING)
+    # =====================================================
+    ranked_clusters = cluster_summary['delegation_efficiency_index'].sort_values(ascending=False).index.tolist()
+    
+    def interpret_user_cluster_ranked(row):
+        cluster_id = row.name
+        rank = ranked_clusters.index(cluster_id)
+        
+        if rank == 0:
+            label = "High Performance Group"
+        elif rank == 1:
+            label = "Standard Performance Group"
+        else:
+            label = "Needs Improvement Group"
+
+        # Warnings
+        if row['capacity_ratio'] > 0.9:
+            return f"{label} (Overloaded Risk)"
+        if row['quality_factor'] < 0.5:
+            return f"{label} (Quality Issues)"
+        
+        return label
+
+    cluster_summary['interpretation'] = cluster_summary.apply(interpret_user_cluster_ranked, axis=1)
+
+    return (
+        df_user,        # Sekarang mengembalikan data per USER, bukan per TASK
+        cluster_summary,
+        silhouette,
+        X_scaled
+    )
+
+
+# =========================================================
+# ELBOW METHOD
+# =========================================================
+def calculate_elbow(X_scaled):
+
+    inertia = []
+
+    K = range(1, 11)
+
+    for k in K:
+
+        model = KMeans(
+            n_clusters=k,
+            random_state=42,
+            n_init=10
+        )
+
+        model.fit(X_scaled)
+
+        inertia.append(model.inertia_)
+
+    return list(K), inertia
+
+
+# =========================================================
+# GENERATE VISUALIZATION
+# =========================================================
+def generate_preview(
+    df_result,
+    silhouette_score_value,
+    output_path='results/latest_preview.png'
+):
+
     sns.set_theme(style="whitegrid")
-    plt.figure(figsize=(14, 8))
-    
-    # Hitung rata-rata tiap klaster untuk penjelasan otomatis
-    cluster_counts = df_result['cluster'].value_counts()
-    cluster_means = df_result.groupby('cluster')['history_point'].mean().sort_values()
-    cluster_labels = {}
-    rank_names = ["Beban Rendah", "Beban Sedang", "Beban Tinggi"]
-    for i, (cluster_id, mean_val) in enumerate(cluster_means.items()):
-        cluster_labels[cluster_id] = rank_names[i]
 
-    # Hitung ringkasan analisis untuk delegasi
-    top_assignee = df_result.groupby('assignee')['history_point'].sum().idxmax()
-    total_tasks = len(df_result)
-    heavy_cluster_id = cluster_means.index[-1]
-    heavy_task_count = cluster_counts.get(heavy_cluster_id, 0)
+    plt.figure(figsize=(16, 8))
 
-    # Tambahkan jitter
-    jitter = np.random.uniform(-0.2, 0.2, size=len(df_result))
-    
-    # Buat scatter plot
-    preview = sns.scatterplot(
-        x=df_result['assignee'],
-        y=df_result['history_point'],
-        hue=df_result['cluster'],
+    # =====================================================
+    # SCATTERPLOT
+    # =====================================================
+    sns.scatterplot(
+        data=df_result,
+        x='assignee',
+        y='story_point',
+        hue='cluster',
         palette='viridis',
-        s=160,
-        alpha=0.8,
-        edgecolor='black',
-        linewidth=0.5,
-        legend='full'
+        s=140,
+        alpha=0.85,
+        edgecolor='black'
     )
-    
-    # Perbarui teks legend agar lebih informatif
-    handles, labels = preview.get_legend_handles_labels()
-    new_labels = []
-    for l in labels:
-        cid = int(l)
-        avg = df_result[df_result['cluster'] == cid]['history_point'].mean()
-        new_labels.append(f"Cluster {l}: {cluster_labels[cid]} (Avg HP: {avg:.1f})")
-    plt.legend(handles, new_labels, title='Kategori Beban Kerja', bbox_to_anchor=(1.02, 1), loc='upper left')
-    
-    plt.title('Evaluasi Delegasi Pekerjaan: Distribusi Beban per Assignee', fontsize=18, pad=20, fontweight='bold')
-    plt.xlabel('Nama Assignee (Penerima Tugas)', fontsize=13)
-    plt.ylabel('History Points (Bobot Kerja)', fontsize=13)
-    
-    # Tambahkan Ringkasan Analisis di sisi kanan bawah
-    summary_text = (
-        "📊 Ringkasan Analisis:\n"
-        f"• Total Tugas: {total_tasks}\n"
-        f"• Beban Terberat: {top_assignee}\n"
-        f"• Tugas Beban Tinggi: {heavy_task_count} item\n"
-        "-----------------------------------\n"
-        "💡 Rekomendasi:\n"
-        f"Perhatikan beban kerja {top_assignee}\n"
-        "agar distribusi delegasi tetap ideal."
-    )
-    plt.text(1.02, 0.2, summary_text, transform=plt.gca().transAxes, fontsize=11, 
-             verticalalignment='bottom', bbox={'boxstyle':'round', 'facecolor':'white', 'alpha':0.9, 'edgecolor':'gray'})
 
-    # Tambahkan penjelasan teks di bawah grafik
-    explanation = (
-        "ℹ️ Keterangan: Sumbu X adalah Penerima Tugas, Sumbu Y adalah Bobot Tugas, dan Warna menunjukkan Cluster."
+    plt.title(
+        'Evaluasi Efektivitas Delegasi Tugas',
+        fontsize=18,
+        fontweight='bold'
     )
-    plt.figtext(0.1, 0.02, explanation, fontsize=10, style='italic', alpha=0.7)
-    
-    plt.tight_layout(rect=[0, 0.05, 0.85, 1]) # Sisakan ruang di kanan untuk legend dan summary
-    
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    plt.savefig(output_path, dpi=300)
+
+    plt.xlabel('Assignee')
+    plt.ylabel('Story Point')
+
+    plt.xticks(rotation=45)
+
+    # =====================================================
+    # SUMMARY
+    # =====================================================
+    total_tasks = len(df_result)
+
+    overload_tasks = len(
+        df_result[
+            (
+                df_result['story_point'] >= 8
+            )
+            &
+            (
+                df_result['task_duration_hours'] >= 40
+            )
+        ]
+    )
+
+    high_rework = len(
+        df_result[
+            df_result['reopen_count'] >= 2
+        ]
+    )
+
+    summary_text = (
+        f"📊 Delegation Analytics\n\n"
+        f"Total Task: {total_tasks}\n"
+        f"Silhouette Score: {silhouette_score_value:.4f}\n"
+        f"Overload Task: {overload_tasks}\n"
+        f"High Rework: {high_rework}\n\n"
+        f"💡 Insight:\n"
+        f"Cluster digunakan untuk\n"
+        f"mengevaluasi efektivitas\n"
+        f"delegasi tugas berdasarkan\n"
+        f"distribusi workload Scrum."
+    )
+
+    plt.text(
+        1.02,
+        0.25,
+        summary_text,
+        transform=plt.gca().transAxes,
+        fontsize=11,
+        bbox=dict(
+            boxstyle='round',
+            facecolor='white',
+            edgecolor='gray'
+        )
+    )
+
+    plt.tight_layout(rect=[0, 0, 0.82, 1])
+
+    os.makedirs(
+        os.path.dirname(output_path),
+        exist_ok=True
+    )
+
+    plt.savefig(
+        output_path,
+        dpi=300
+    )
+
     plt.close()
 
+
+# =========================================================
+# TEMPLATE CSV
+# =========================================================
 @app.get("/template")
 async def get_template():
-    """Endpoint untuk mengambil template file CSV"""
+
     template_data = {
-        'task_id': ['AP-001', 'AP-002'],
-        'title': ['Contoh Tugas 1', 'Contoh Tugas 2'],
-        'type': ['BE', 'FE'],
-        'status': ['TO DO', 'DONE'],
-        'assignee': ['Budi', 'Siti'],
-        'history_point': [5, 3]
+        'sprint_id': ['Sprint-1', 'Sprint-1'],
+        'role': ['Backend', 'Frontend'],
+        'assignee': ['Rahman', 'Siti'],
+        'story_point': [8, 3],
+        'complexity_score': [5, 2],
+        'risk_score': [4, 2],
+        'dependency_score': [3, 1],
+        'uncertainty_score': [4, 1],
+        'volume_score': [5, 2],
+        'task_duration_hours': [48, 12],
+        'reopen_count': [2, 0],
+        'role_capacity': [35, 30]
     }
-    df_template = pd.DataFrame(template_data)
-    
-    # Simpan ke buffer
+
+    df_template = pd.DataFrame(
+        template_data
+    )
+
     stream = io.StringIO()
-    df_template.to_csv(stream, index=False)
-    
+
+    df_template.to_csv(
+        stream,
+        index=False
+    )
+
     return Response(
         content=stream.getvalue(),
         media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=template_delegasi.csv"}
+        headers={
+            "Content-Disposition":
+            "attachment; filename=template_evaluasi_delegasi.csv"
+        }
     )
 
-@app.post("/upload")
-async def upload_file(request: Request, file: UploadFile = File(...)):
-    """Endpoint untuk upload CSV, mendapatkan hasil JSON, dan URL grafik"""
-    if not file.filename.endswith('.csv'):
-        raise HTTPException(status_code=400, detail="Hanya file CSV yang diperbolehkan.")
-    
-    try:
-        contents = await file.read()
-        df = pd.read_csv(io.BytesIO(contents))
-        
-        # Jalankan clustering
-        df_result, le_type = perform_clustering(df)
-        
-        # Generate plot
-        preview_path = 'results/latest_preview.png'
-        generate_preview(df_result, le_type, preview_path)
-        
-        # Bangun URL untuk grafik
-        base_url = str(request.base_url)
-        preview_url = f"{base_url}preview"
-        download_url = f"{base_url}download"
-        
-        # Kembalikan hasil
-        return {
-            "status": "success",
-            "message": "File berhasil diproses dan diklusterkan",
-            "preview_url": preview_url,
-            "download_url": download_url,
-            "data": df_result.to_dict(orient="records")
-        }
-        
-    except ValueError as ve:
-        # Error validasi dari perform_clustering (Kolom hilang, data bukan angka, dll)
-        raise HTTPException(status_code=400, detail=str(ve))
-    except Exception as e:
-        # Error server lainnya
-        raise HTTPException(status_code=500, detail=f"Terjadi kesalahan server: {str(e)}")
 
+# =========================================================
+# UPLOAD CSV
+# =========================================================
+@app.post("/upload")
+async def upload_file(
+    request: Request,
+    file: UploadFile = File(...)
+):
+
+    if not file.filename.endswith('.csv'):
+        raise HTTPException(
+            status_code=400,
+            detail="Hanya file CSV diperbolehkan."
+        )
+
+    try:
+
+        contents = await file.read()
+
+        df = pd.read_csv(
+            io.BytesIO(contents)
+        )
+
+        (
+            df_result,
+            cluster_summary,
+            silhouette,
+            X_scaled
+        ) = perform_clustering(df)
+
+        # =================================================
+        # GENERATE PREVIEW
+        # =================================================
+        preview_path = 'results/latest_preview.png'
+
+        generate_preview(
+            df_result,
+            silhouette,
+            preview_path
+        )
+
+        # =================================================
+        # ELBOW METHOD
+        # =================================================
+        K, inertia = calculate_elbow(
+            X_scaled
+        )
+
+        # =================================================
+        # ROLE ANALYSIS
+        # =================================================
+        role_analysis = (
+            df_result
+            .groupby(['role', 'cluster'])
+            .size()
+            .reset_index(name='total_task')
+        )
+
+        # =================================================
+        # ASSIGNEE ANALYSIS
+        # =================================================
+        assignee_analysis = (
+            df_result
+            .groupby(['assignee', 'cluster'])
+            .size()
+            .reset_index(name='total_task')
+        )
+
+        # =================================================
+        # ROLE WORKLOAD
+        # =================================================
+        role_workload = (
+            df_result
+            .groupby('role')['story_point']
+            .sum()
+            .reset_index(name='total_story_point')
+        )
+
+        # =================================================
+        # ASSIGNEE WORKLOAD
+        # =================================================
+        assignee_workload = (
+            df_result
+            .groupby('assignee')['story_point']
+            .sum()
+            .reset_index(name='total_story_point')
+        )
+
+        # =================================================
+        # URL
+        # =================================================
+        base_url = str(request.base_url)
+
+        preview_url = f"{base_url}preview"
+
+        download_url = f"{base_url}download"
+
+        return {
+
+            "status": "success",
+
+            "message":
+                "Evaluasi efektivitas delegasi berhasil dilakukan.",
+
+            "silhouette_score":
+                round(silhouette, 4),
+
+            "cluster_summary":
+                cluster_summary
+                .reset_index()
+                .to_dict(orient='records'),
+
+            "role_analysis":
+                role_analysis
+                .to_dict(orient='records'),
+
+            "assignee_analysis":
+                assignee_analysis
+                .to_dict(orient='records'),
+
+            "role_workload":
+                role_workload
+                .to_dict(orient='records'),
+
+            "assignee_workload":
+                assignee_workload
+                .to_dict(orient='records'),
+
+            "elbow_method": {
+                "k_values": K,
+                "inertia": inertia
+            },
+
+            "preview_url": preview_url,
+
+            "download_url": download_url,
+
+            "data":
+                df_result.to_dict(
+                    orient='records'
+                )
+        }
+
+    except ValueError as ve:
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(ve)
+        )
+
+    except Exception as e:
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Server Error: {str(e)}"
+        )
+
+
+# =========================================================
+# PREVIEW IMAGE
+# =========================================================
 @app.get("/preview")
 async def get_preview():
-    """Endpoint untuk melihat hasil grafik terbaru di browser"""
+
     preview_path = 'results/latest_preview.png'
+
     if not os.path.exists(preview_path):
-        raise HTTPException(status_code=404, detail="Grafik belum tersedia. Silakan upload file terlebih dahulu.")
+
+        raise HTTPException(
+            status_code=404,
+            detail="Preview belum tersedia."
+        )
+
     return FileResponse(preview_path)
 
+
+# =========================================================
+# DOWNLOAD IMAGE
+# =========================================================
 @app.get("/download")
 async def download_preview():
-    """Endpoint untuk mengunduh hasil grafik terbaru"""
+
     preview_path = 'results/latest_preview.png'
+
     if not os.path.exists(preview_path):
-        raise HTTPException(status_code=404, detail="File tidak ditemukan.")
+
+        raise HTTPException(
+            status_code=404,
+            detail="File tidak ditemukan."
+        )
+
     return FileResponse(
-        path=preview_path, 
-        filename="hasil_analisis_delegasi.png",
+        path=preview_path,
+        filename="hasil_evaluasi_delegasi.png",
         media_type="image/png"
     )
 
+
+# =========================================================
+# RUN LOCAL
+# =========================================================
 def run_local():
-    print("=== Sistem Evaluasi Delegasi Pekerjaan (K-Means) ===")
-    file_path = 'assets/ioffice_dataset_typed_titles_150.csv'
-    
+
+    print("=== Evaluasi Efektivitas Delegasi ===")
+
+    file_path = 'assets/dataset_evaluasi_delegasi_tugas.csv'
+
     if not os.path.exists(file_path):
-        print(f"Error: File {file_path} tidak ditemukan!")
+
+        print(f"File tidak ditemukan: {file_path}")
+
         return
 
     df = pd.read_csv(file_path)
-    df_result, le_type = perform_clustering(df)
-    
-    print("\nAnalisis Rata-rata per Klaster:")
-    print(df_result.groupby('cluster')[['history_point', 'type_encoded']].mean())
 
-    # Visualisasi
-    plt.figure(figsize=(10, 6))
-    jitter = np.random.uniform(-0.15, 0.15, size=len(df_result))
-    scatter = plt.scatter(df_result['type_encoded'] + jitter, 
-                         df_result['history_point'], 
-                         c=df_result['cluster'], 
-                         cmap='viridis', alpha=0.6, s=80)
-    
-    plt.title('Klastering Evaluasi Delegasi Pekerjaan')
-    plt.xticks(ticks=range(len(le_type.classes_)), labels=le_type.classes_)
-    plt.colorbar(scatter, label='Cluster ID')
+    (
+        df_result,
+        cluster_summary,
+        silhouette,
+        X_scaled
+    ) = perform_clustering(df)
+
+    # =====================================================
+    # PRINT ANALYSIS
+    # =====================================================
+    print("\n=== SILHOUETTE SCORE ===")
+
+    print(round(silhouette, 4))
+
+    print("\n=== CLUSTER SUMMARY ===")
+
+    print(cluster_summary)
+
+    # =====================================================
+    # VISUALISASI
+    # =====================================================
+    plt.figure(figsize=(14, 7))
+
+    sns.scatterplot(
+        data=df_result,
+        x='assignee',
+        y='story_point',
+        hue='cluster',
+        palette='viridis',
+        s=120
+    )
+
+    plt.title(
+        'Evaluasi Efektivitas Delegasi Tugas'
+    )
+
+    plt.xlabel('Assignee')
+
+    plt.ylabel('Story Point')
+
+    plt.xticks(rotation=45)
+
     plt.show()
 
-    output_path = 'results/hasil_clustering_delegasi.csv'
-    os.makedirs('results', exist_ok=True)
-    df_result.to_csv(output_path, index=False)
+    # =====================================================
+    # SAVE RESULT
+    # =====================================================
+    os.makedirs(
+        'results',
+        exist_ok=True
+    )
+
+    output_path = (
+        'results/hasil_evaluasi_delegasi.csv'
+    )
+
+    df_result.to_csv(
+        output_path,
+        index=False
+    )
+
     print(f"\nHasil disimpan ke: {output_path}")
 
+
+# =========================================================
+# MAIN
+# =========================================================
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="K-Means Job Delegation")
-    parser.add_argument("--api", action="store_true", help="Jalankan sebagai API Server")
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--api",
+        action="store_true",
+        help="Jalankan sebagai API"
+    )
+
     args = parser.parse_args()
 
     if args.api:
-        print("Memulai API Server di http://127.0.0.1:8000")
-        print("Coba endpoint: http://127.0.0.1:8000/template")
-        uvicorn.run(app, host="127.0.0.1", port=8000)
+
+        print("API Running...")
+        print("Swagger Docs: http://127.0.0.1:8000/docs")
+
+        uvicorn.run(
+            app,
+            host="127.0.0.1",
+            port=8000
+        )
+
     else:
+
         run_local()

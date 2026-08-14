@@ -31,7 +31,7 @@ Sangat disarankan menggunakan _virtual environment_ (`venv`) agar dependensi tid
 
 ```bash
 cd backend
-python -m venv venv
+python3 -m venv venv  # Gunakan python3 untuk Mac/Linux, atau python untuk Windows
 
 # Aktivasi venv (Mac/Linux):
 source venv/bin/activate
@@ -49,16 +49,33 @@ Dataset `.csv` harus memiliki kolom: `task_id`, `title`, `type`, `status`, `assi
 
 ## 💻 Cara Penggunaan
 
-### A. Penggunaan Web Frontend (Sangat Disarankan)
+### A. Cara Cepat dengan 1 Perintah (Sangat Disarankan)
 
-Untuk pengalaman visual yang interaktif dan estetis:
+Anda bisa menyiapkan dependensi dan menjalankan **Backend** dan **Frontend** secara bersamaan hanya dengan 1 perintah melalui terminal di folder utama proyek:
 
-1. **Jalankan API Server**:
+```bash
+./run.sh
+```
+
+**Script ini akan secara otomatis:**
+- Membuat dan mengaktifkan _virtual environment_ (jika belum ada).
+- Menginstal semua pustaka (_library_) yang dibutuhkan (backend & frontend).
+- Membuka browser web Anda secara otomatis ke `http://localhost:3000`.
+
+*(Server backend akan berjalan di background dan frontend di foreground. Untuk mematikan keduanya, cukup tekan `CTRL+C` di terminal tersebut.)*
+
+### B. Penggunaan Manual Web Frontend
+
+Jika Anda lebih suka menjalankan secara manual di terminal terpisah:
+
+1. **Jalankan API Server** (Terminal 1):
    ```bash
    cd backend
-   python main.py --api
+   # Pastikan environment (venv) sudah aktif!
+   # Jika error "command not found: python" di Mac/Linux, gunakan python3:
+   python main.py --api  # atau python3 main.py --api
    ```
-2. **Jalankan Frontend Server** (Buka terminal baru):
+2. **Jalankan Frontend Server** (Terminal 2):
    ```bash
    cd frontend
    npm run dev
@@ -70,7 +87,9 @@ Untuk pengalaman visual yang interaktif dan estetis:
 1. **Jalankan Server**:
    ```bash
    cd backend
-   python main.py --api
+   # Pastikan environment (venv) sudah aktif!
+   # Jika error "command not found: python" di Mac/Linux, gunakan python3:
+   python main.py --api  # atau python3 main.py --api
    ```
 2. **Dokumentasi Interaktif**: Buka `http://127.0.0.1:8000/`. Anda akan diarahkan ke **Swagger UI**.
 3. **Alur Kerja**:
@@ -84,7 +103,9 @@ Untuk pengalaman visual yang interaktif dan estetis:
 2. Jalankan:
    ```bash
    cd backend
-   python main.py
+   # Pastikan environment (venv) sudah aktif!
+   # Jika error "command not found: python" di Mac/Linux, gunakan python3:
+   python main.py  # atau python3 main.py
    ```
 
 ---
