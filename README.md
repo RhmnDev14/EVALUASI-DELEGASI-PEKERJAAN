@@ -19,7 +19,9 @@ Berikut adalah alur data algoritma dari dataset mentah hingga tahap evaluasi akh
 
 ## 🚀 Fitur Utama
 
+- **Aplikasi Desktop (Executable)**: File executable yang bisa dijalankan langsung tanpa instalasi tambahan.
 - **REST API (FastAPI)**: Memungkinkan integrasi dengan aplikasi lain (Web/Mobile).
+- **Antarmuka Web (Next.js)**: Dashboard interaktif untuk upload, analisis, dan visualisasi.
 - **Analisis K-Means**: Pengelompokan beban kerja karyawan menggunakan K=3 (Rendah, Sedang, Tinggi).
 - **Validasi Cepat (Dry Run)**: Fitur untuk memvalidasi format dan kelengkapan data sebelum diproses secara penuh.
 - **Ekspor Laporan Excel Premium**: Menghasilkan file Excel (.xlsx) dengan _styling_ otomatis, *UI Cards* rekomendasi delegasi per klaster, kotak metrik, dan plot grafik yang ditanamkan (*embedded*).
@@ -29,16 +31,27 @@ Berikut adalah alur data algoritma dari dataset mentah hingga tahap evaluasi akh
 
 ## 🛠️ Teknologi yang Digunakan
 
-- **Frontend**: Next.js (React), TypeScript, Tailwind CSS
+- **Frontend**: Next.js (React), TypeScript
 - **Backend**: Python 3.x, FastAPI, Uvicorn
 - **Data Science & Export**: Pandas, Scikit-Learn, OpenPyXL
 - **Visualisasi**: Matplotlib, Seaborn
+- **Desktop**: PyWebView (jendela desktop native)
+- **Build Executable**: PyInstaller
 
 ## 📋 Prasyarat
 
+### A. Menjalankan via Executable (Tanpa Instalasi)
+
+Tidak memerlukan instalasi apapun. Cukup jalankan file executable yang sudah disediakan:
+
+- **macOS**: `EvaluasiDelegasi.app` atau `EvaluasiDelegasi`
+- **Windows**: `EvaluasiDelegasi.exe`
+
+### B. Menjalankan dari Source Code
+
 Pastikan Anda sudah menginstal Python (Backend) dan Node.js (Frontend) di sistem Anda.
 
-### Setup Lingkungan Python (Backend)
+#### Setup Lingkungan Python (Backend)
 
 Sangat disarankan menggunakan _virtual environment_ (`venv`) agar dependensi tidak bentrok:
 
@@ -74,7 +87,31 @@ Dataset `.csv` harus memiliki kolom-kolom berikut agar dapat diproses oleh siste
 
 ## 💻 Cara Penggunaan
 
-### A. Cara Cepat dengan 1 Perintah (Sangat Disarankan)
+### A. Menjalankan Executable (Sangat Disarankan)
+
+Cara termudah untuk menggunakan aplikasi ini:
+
+**Mode Desktop (double-click):**
+```bash
+# macOS — klik dua kali file EvaluasiDelegasi.app
+# atau dari terminal:
+./EvaluasiDelegasi
+```
+Aplikasi akan terbuka dalam jendela desktop native, seperti software pada umumnya.
+
+**Mode Browser (dengan flag `--api`):**
+```bash
+./EvaluasiDelegasi --api
+```
+Menjalankan server API dan otomatis membuka browser di `http://127.0.0.1:8000`.
+
+**Mode CLI Lokal (tanpa GUI):**
+```bash
+./EvaluasiDelegasi --local
+```
+Menjalankan analisis clustering langsung dari terminal tanpa tampilan grafis.
+
+### B. Menjalankan dari Source Code dengan 1 Perintah
 
 Anda bisa menyiapkan dependensi dan menjalankan **Backend** dan **Frontend** secara bersamaan hanya dengan 1 perintah melalui terminal di folder utama proyek:
 
@@ -89,7 +126,7 @@ Anda bisa menyiapkan dependensi dan menjalankan **Backend** dan **Frontend** sec
 
 *(Server backend akan berjalan di background dan frontend di foreground. Untuk mematikan keduanya, cukup tekan `CTRL+C` di terminal tersebut.)*
 
-### B. Penggunaan Manual Web Frontend
+### C. Menjalankan dari Source Code secara Manual
 
 Jika Anda lebih suka menjalankan secara manual di terminal terpisah:
 
@@ -107,39 +144,52 @@ Jika Anda lebih suka menjalankan secara manual di terminal terpisah:
    ```
 3. **Akses Aplikasi**: Buka browser dan kunjungi `http://localhost:3000`.
 
-### B. Penggunaan API Server
+### D. Penggunaan API Server
 
-1. **Jalankan Server**:
-   ```bash
-   cd backend
-   # Pastikan environment (venv) sudah aktif!
-   # Jika error "command not found: python" di Mac/Linux, gunakan python3:
-   python main.py --api  # atau python3 main.py --api
-   ```
-2. **Dokumentasi Interaktif**: Buka `http://127.0.0.1:8000/`. Anda akan diarahkan ke **Swagger UI**.
+1. **Jalankan Server** (via executable atau source code).
+2. **Dokumentasi Interaktif**: Buka `http://127.0.0.1:8000/docs`. Anda akan diarahkan ke **Swagger UI**.
 3. **Alur Kerja**:
-   - `GET /template` untuk mendapatkan contoh file.
-   - `POST /dry-run` untuk memvalidasi data CSV tanpa menjalankan clustering.
-   - `POST /upload` untuk memproses data, menjalankan K-Means, dan men-generate laporan.
-   - `GET /preview` untuk melihat visualisasi hasil terbaru di browser.
-   - `GET /download-excel` untuk mengunduh laporan Excel terpadu yang memuat ringkasan klaster, detail karyawan, metrik, rekomendasi delegasi, dan plot grafik.
+   - `GET /api/template` untuk mendapatkan contoh file.
+   - `POST /api/dry-run` untuk memvalidasi data CSV tanpa menjalankan clustering.
+   - `POST /api/upload` untuk memproses data, menjalankan K-Means, dan men-generate laporan.
+   - `GET /api/preview` untuk melihat visualisasi hasil terbaru di browser.
+   - `GET /api/download-excel` untuk mengunduh laporan Excel terpadu yang memuat ringkasan klaster, detail karyawan, metrik, rekomendasi delegasi, dan plot grafik.
 
-### C. Penggunaan Lokal (CLI)
+### E. Penggunaan Lokal (CLI)
 
-1. Letakkan dataset di folder `backend/assets/`.
+1. Letakkan dataset di folder `backend/`.
 2. Jalankan:
    ```bash
    cd backend
    # Pastikan environment (venv) sudah aktif!
-   # Jika error "command not found: python" di Mac/Linux, gunakan python3:
-   python main.py  # atau python3 main.py
+   python main.py --local  # atau python3 main.py --local
    ```
+
+---
+
+## 🔨 Build Executable
+
+Untuk membuild ulang file executable dari source code:
+
+```bash
+./build_exe.sh
+```
+
+Script ini akan secara otomatis:
+1. Build frontend menjadi file statis (`npm run build`)
+2. Copy hasil build ke folder backend
+3. Install dependensi Python
+4. Build executable menggunakan PyInstaller
+
+Hasil executable akan berada di `backend/dist/`.
+
+> **Catatan**: Executable hanya bisa dijalankan di OS yang sama dengan OS saat build. Build dari macOS menghasilkan executable macOS, build dari Windows menghasilkan `.exe` Windows.
 
 ---
 
 ## 📊 Penjelasan Output
 
-### 1. Laporan Terpadu Excel (`/download-excel`)
+### 1. Laporan Terpadu Excel (`/api/download-excel`)
 
 Sistem akan menghasilkan file **hasil_evaluasi_delegasi.xlsx** yang terdiri dari:
 
@@ -167,13 +217,19 @@ Saat dijalankan melalui CLI, data hasil clustering tetap disimpan di `results/ha
 
 ```text
 K-MEANS-CLUSTERING/
-├── backend/            # API Server (Python/FastAPI)
-│   ├── assets/         # Dataset input
-│   ├── results/        # Export CSV, Excel (.xlsx), & Grafik (.png)
-│   ├── main.py         # Logika K-Means
-│   └── requirements.txt
-├── frontend/           # Aplikasi Web (Next.js)
-└── README.md           # Dokumentasi Utama
+├── backend/               # API Server (Python/FastAPI)
+│   ├── frontend_dist/     # Frontend hasil build (static HTML/CSS/JS)
+│   ├── results/           # Export CSV, Excel (.xlsx), & Grafik (.png)
+│   ├── main.py            # Logika utama (API + K-Means + Desktop)
+│   ├── requirements.txt   # Dependensi Python
+│   ├── build/             # File sementara PyInstaller
+│   └── dist/              # ⭐ File executable hasil build
+├── frontend/              # Aplikasi Web (Next.js)
+│   ├── src/app/           # Source code React
+│   └── out/               # Hasil static export
+├── build_exe.sh           # Script build executable otomatis
+├── run.sh                 # Script jalankan dari source code
+└── README.md              # Dokumentasi Utama
 ```
 
 ## ✍️ Penulis

@@ -70,7 +70,7 @@ export default function Home() {
     formData.append('file', file);
 
     try {
-      const res = await fetch('http://127.0.0.1:8000/dry-run', {
+      const res = await fetch('/api/dry-run', {
         method: 'POST',
         body: formData,
       });
@@ -100,7 +100,7 @@ export default function Home() {
     formData.append('file', file);
 
     try {
-      const res = await fetch('http://127.0.0.1:8000/upload', {
+      const res = await fetch('/api/upload', {
         method: 'POST',
         body: formData,
       });
@@ -214,7 +214,7 @@ export default function Home() {
             </div>
             
             <a 
-              href="http://127.0.0.1:8000/template" 
+              href="/api/template" 
               target="_blank" 
               rel="noreferrer"
               className={`${styles.button} ${styles.secondaryBtn}`}

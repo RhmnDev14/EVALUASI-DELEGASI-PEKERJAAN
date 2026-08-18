@@ -1,13 +1,19 @@
 import pandas as pd
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend for PyInstaller
 import matplotlib.pyplot as plt
 import seaborn as sns
 import os
 import io
+import sys
 import argparse
+import threading
+import webbrowser
 
 from fastapi import FastAPI, Response, UploadFile, File, HTTPException, Request
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from sklearn.cluster import KMeans
@@ -16,6 +22,35 @@ from sklearn.metrics import silhouette_score, davies_bouldin_score
 import uvicorn
 from openpyxl.drawing.image import Image
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+
+# =========================================================
+# RESOURCE PATH HELPER (PyInstaller support)
+# =========================================================
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    if getattr(sys, 'frozen', False):
+        # Running as bundled executable
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, relative_path)
+
+
+# =========================================================
+# RESULTS DIR HELPER (writable location)
+# =========================================================
+def get_results_dir():
+    """Get writable results directory"""
+    if getattr(sys, 'frozen', False):
+        # When frozen, use directory next to the executable
+        base = os.path.dirname(sys.executable)
+    else:
+        base = os.path.dirname(os.path.abspath(__file__))
+    results_dir = os.path.join(base, 'results')
+    os.makedirs(results_dir, exist_ok=True)
+    return results_dir
+
 
 # =========================================================
 # FASTAPI
@@ -34,13 +69,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# =========================================================
-# ROOT
-# =========================================================
-@app.get("/", include_in_schema=False)
-async def root():
-    return RedirectResponse(url="/docs")
 
 
 # =========================================================
@@ -179,8 +207,11 @@ def calculate_elbow(X_scaled):
 def generate_preview(
     df_result,
     dbi_value,
-    output_path='results/latest_preview.png'
+    output_path=None
 ):
+
+    if output_path is None:
+        output_path = os.path.join(get_results_dir(), 'latest_preview.png')
 
     sns.set_theme(style="whitegrid")
 
@@ -263,9 +294,9 @@ def generate_preview(
 
 
 # =========================================================
-# TEMPLATE CSV
+# API: TEMPLATE CSV
 # =========================================================
-@app.get("/template")
+@app.get("/api/template")
 async def get_template():
 
     template_data = {
@@ -305,9 +336,9 @@ async def get_template():
 
 
 # =========================================================
-# DRY RUN / VALIDASI
+# API: DRY RUN / VALIDASI
 # =========================================================
-@app.post("/dry-run")
+@app.post("/api/dry-run")
 async def dry_run(file: UploadFile = File(...)):
     
     if not file.filename.endswith('.csv'):
@@ -365,9 +396,9 @@ async def dry_run(file: UploadFile = File(...)):
 
 
 # =========================================================
-# UPLOAD CSV
+# API: UPLOAD CSV
 # =========================================================
-@app.post("/upload")
+@app.post("/api/upload")
 async def upload_file(
     request: Request,
     file: UploadFile = File(...)
@@ -397,7 +428,7 @@ async def upload_file(
         # =================================================
         # GENERATE PREVIEW
         # =================================================
-        preview_path = 'results/latest_preview.png'
+        preview_path = os.path.join(get_results_dir(), 'latest_preview.png')
 
         generate_preview(
             df_result,
@@ -452,7 +483,7 @@ async def upload_file(
         # =================================================
         # EXCEL EXPORT
         # =================================================
-        excel_path = 'results/hasil_evaluasi_delegasi.xlsx'
+        excel_path = os.path.join(get_results_dir(), 'hasil_evaluasi_delegasi.xlsx')
         with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
             cluster_summary.to_excel(writer, sheet_name='Ringkasan Klaster', startrow=5, index=False)
             df_result.to_excel(writer, sheet_name='Detail Karyawan', index=False)
@@ -614,11 +645,11 @@ async def upload_file(
         # =================================================
         base_url = str(request.base_url)
 
-        preview_url = f"{base_url}preview"
+        preview_url = f"{base_url}api/preview"
 
-        download_url = f"{base_url}download"
+        download_url = f"{base_url}api/download"
 
-        excel_url = f"{base_url}download-excel"
+        excel_url = f"{base_url}api/download-excel"
 
         return {
 
@@ -682,12 +713,12 @@ async def upload_file(
 
 
 # =========================================================
-# PREVIEW IMAGE
+# API: PREVIEW IMAGE
 # =========================================================
-@app.get("/preview")
+@app.get("/api/preview")
 async def get_preview():
 
-    preview_path = 'results/latest_preview.png'
+    preview_path = os.path.join(get_results_dir(), 'latest_preview.png')
 
     if not os.path.exists(preview_path):
 
@@ -700,12 +731,12 @@ async def get_preview():
 
 
 # =========================================================
-# DOWNLOAD EXCEL
+# API: DOWNLOAD EXCEL
 # =========================================================
-@app.get("/download-excel")
+@app.get("/api/download-excel")
 async def download_excel():
 
-    excel_path = 'results/hasil_evaluasi_delegasi.xlsx'
+    excel_path = os.path.join(get_results_dir(), 'hasil_evaluasi_delegasi.xlsx')
 
     if not os.path.exists(excel_path):
         raise HTTPException(
@@ -718,6 +749,39 @@ async def download_excel():
         filename="hasil_evaluasi_delegasi.xlsx",
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
+
+# =========================================================
+# SERVE FRONTEND STATIC FILES
+# =========================================================
+FRONTEND_DIR = resource_path('frontend_dist')
+
+if os.path.isdir(FRONTEND_DIR):
+    # Serve static assets (_next, etc.)
+    next_static = os.path.join(FRONTEND_DIR, '_next')
+    if os.path.isdir(next_static):
+        app.mount("/_next", StaticFiles(directory=next_static), name="next_static")
+
+    # Serve other static files from frontend
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        """Serve frontend static files, fallback to index.html for SPA routing"""
+        # Try exact file match first
+        file_path = os.path.join(FRONTEND_DIR, full_path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+        
+        # Fallback to index.html (SPA routing)
+        index_path = os.path.join(FRONTEND_DIR, 'index.html')
+        if os.path.isfile(index_path):
+            return FileResponse(index_path)
+        
+        raise HTTPException(status_code=404, detail="Not found")
+else:
+    # No frontend dist — redirect to API docs
+    @app.get("/", include_in_schema=False)
+    async def root():
+        return RedirectResponse(url="/docs")
 
 
 # =========================================================
@@ -802,6 +866,72 @@ def run_local():
 
 
 # =========================================================
+# DESKTOP MODE (pywebview)
+# =========================================================
+def run_desktop():
+    """Run as desktop application with pywebview window"""
+    try:
+        import webview
+    except ImportError:
+        print("pywebview tidak ditemukan. Menjalankan di mode browser...")
+        run_api()
+        return
+
+    print("=" * 50)
+    print("  Evaluasi Efektivitas Delegasi Tugas")
+    print("  Desktop Mode")
+    print("=" * 50)
+
+    # Start uvicorn in a background thread
+    server_thread = threading.Thread(
+        target=uvicorn.run,
+        kwargs={
+            "app": app,
+            "host": "127.0.0.1",
+            "port": 8000,
+            "log_level": "warning"
+        },
+        daemon=True
+    )
+    server_thread.start()
+
+    # Give server a moment to start
+    import time
+    time.sleep(1.5)
+
+    # Create desktop window
+    webview.create_window(
+        'Evaluasi Delegasi - K-Means Clustering',
+        'http://127.0.0.1:8000',
+        width=1280,
+        height=800,
+        min_size=(900, 600)
+    )
+    webview.start()
+
+
+def run_api():
+    """Run as API server (browser mode)"""
+    print("API Running...")
+    print("Akses Aplikasi: http://127.0.0.1:8000")
+    print("Swagger Docs: http://127.0.0.1:8000/docs")
+
+    # Auto-open browser
+    def open_browser():
+        import time
+        time.sleep(1.5)
+        webbrowser.open('http://127.0.0.1:8000')
+
+    threading.Thread(target=open_browser, daemon=True).start()
+
+    uvicorn.run(
+        app,
+        host="127.0.0.1",
+        port=8000
+    )
+
+
+# =========================================================
 # MAIN
 # =========================================================
 if __name__ == "__main__":
@@ -811,22 +941,25 @@ if __name__ == "__main__":
     parser.add_argument(
         "--api",
         action="store_true",
-        help="Jalankan sebagai API"
+        help="Jalankan sebagai API (mode browser)"
+    )
+
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help="Jalankan analisis lokal (tanpa server)"
     )
 
     args = parser.parse_args()
 
-    if args.api:
-
-        print("API Running...")
-        print("Swagger Docs: http://127.0.0.1:8000/docs")
-
-        uvicorn.run(
-            app,
-            host="127.0.0.1",
-            port=8000
-        )
-
-    else:
-
+    if args.local:
         run_local()
+    elif args.api:
+        run_api()
+    else:
+        # Default: desktop mode (pywebview)
+        # When running as executable, this is the default
+        if getattr(sys, 'frozen', False):
+            run_desktop()
+        else:
+            run_api()
